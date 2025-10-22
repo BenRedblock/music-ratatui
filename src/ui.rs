@@ -1,12 +1,14 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Margin, Rect},
+    style::{Style, Stylize},
     symbols,
-    widgets::{Block, Borders, Paragraph},
+    text::Text,
+    widgets::{Block, Borders, List, Paragraph, canvas::Line},
 };
 
 use crate::App;
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(6)])
@@ -35,7 +37,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_media_progressbar(app, frame, media_progress_rect);
 }
 
-fn create_upper_rect(app: &App, frame: &mut Frame, rect: Rect) {
+fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
     if app.upcoming_media_shown {
         let layout = ratatui::layout::Layout::default()
             .direction(Direction::Horizontal)
@@ -48,7 +50,7 @@ fn create_upper_rect(app: &App, frame: &mut Frame, rect: Rect) {
     }
 }
 
-fn render_media_selection(app: &App, frame: &mut Frame, rect: Rect) {
+fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
     let border_set = match app.upcoming_media_shown {
         true => symbols::border::Set {
             top_right: symbols::line::NORMAL.horizontal_down,
@@ -59,12 +61,24 @@ fn render_media_selection(app: &App, frame: &mut Frame, rect: Rect) {
             ..symbols::border::PLAIN
         },
     };
-    let paragraph = Paragraph::new("Media Select").block(
-        Block::default()
-            .border_set(border_set)
-            .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT),
-    );
-    frame.render_widget(paragraph, rect);
+    let media_select_block = Block::default()
+        .border_set(border_set)
+        .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
+
+    // Lines
+    //
+    let list = List::default()
+        .items(
+            app.select_handler
+                .items()
+                .iter()
+                .map(|str| Text::from(str.clone())),
+        )
+        .style(Style::new().white())
+        .highlight_style(Style::new().italic())
+        .highlight_symbol(">>")
+        .block(media_select_block);
+    frame.render_stateful_widget(list, rect, &mut app.select_handler.state());
 }
 
 fn render_upcoming_media(app: &App, frame: &mut Frame, rect: Rect) {

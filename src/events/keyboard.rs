@@ -6,6 +6,9 @@ use crate::events::Events;
 
 pub enum Action {
     Quit,
+    MoveUp,
+    MoveDown,
+    Select,
 }
 
 pub struct KeyboardHandler {
@@ -47,6 +50,15 @@ impl KeyboardHandler {
         match key_event.code {
             KeyCode::Char('q') => {
                 let _ = self.event_tx.send(Events::Action(Action::Quit));
+            }
+            KeyCode::Up | KeyCode::PageUp => {
+                let _ = self.event_tx.send(Events::Action(Action::MoveUp));
+            }
+            KeyCode::Down | KeyCode::PageDown => {
+                let _ = self.event_tx.send(Events::Action(Action::MoveDown));
+            }
+            KeyCode::Enter => {
+                let _ = self.event_tx.send(Events::Action(Action::Select));
             }
             _ => {}
         }
