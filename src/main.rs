@@ -1,12 +1,14 @@
 use std::{
+    env,
     path::Path,
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, Receiver, Sender, channel},
 };
 
 use crate::{
     events::{
-        Event,
+        ApplicationEvent,
         keyboard::{Action, KeyboardHandler},
+        musicplayer::{Player, PlayerReceiveEvent},
     },
     filefinder::FileFinder,
     song::Song,
@@ -20,7 +22,13 @@ mod ui;
 mod utils;
 
 fn main() -> Result<(), std::io::Error> {
-    let mut app = App::new();
+    let args: Vec<String> = env::args().collect();
+    let path = if args.len() > 1 {
+        args[1].clone()
+    } else {
+        "~".to_string()
+    };
+    let mut app = App::new(path);
     app.run()
 }
 
@@ -29,31 +37,33 @@ struct App {
     upcoming_media_shown: bool,
     select_handler: SelectHandler<Song>,
     file_finder: FileFinder,
-    loaded_songs: Vec<Song>,
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(path: String) -> Self {
         App {
             exit: false,
             upcoming_media_shown: true,
             select_handler: SelectHandler::new(),
-            file_finder: FileFinder::new([
-                ".mp3".to_string(),
-                ".ogg".to_string(),
-                ".ics".to_string(),
-            ]),
-            loaded_songs: Vec::new(),
+            file_finder: FileFinder::new(
+                [".mp3".to_string(), ".ogg".to_string(), ".".to_string()],
+                path,
+                Some(2),
+            ),
         }
     }
 
     fn run(&mut self) -> Result<(), std::io::Error> {
         let mut terminal = ratatui::init();
 
-        let (event_tx, event_rx) = mpsc::channel::<Event>();
-        self.create_threads(&event_tx);
-        self.file_finder.find_paths("".to_string(), 2);
-        self.loaded_songs = self.file_finder.create_songs().unwrap_or(Vec::new());
+        let (event_tx, event_rx) = channel::<ApplicationEvent>();
+
+        let (player_tx, player_rx) = channel::<PlayerReceiveEvent>();
+
+        self.create_threads(&event_tx, player_rx);
+        self.file_finder.find_paths(None, None);
+        self.select_handler
+            .set_items(self.file_finder.create_songs().unwrap_or(Vec::new()));
 
         loop {
             if self.exit {
@@ -64,13 +74,20 @@ impl App {
             });
             if let Ok(event) = event_rx.try_recv() {
                 match event {
-                    Event::Action(action) => match action {
+                    ApplicationEvent::Action(action) => match action {
                         Action::Quit => self.exit = true,
                         Action::MoveUp => self.select_handler.up(),
                         Action::MoveDown => self.select_handler.down(),
                         Action::Select => {
-                            self.select_handler.select();
+                            if let Some(song) = self.select_handler.select() {
+                                player_tx
+                                    .send(PlayerReceiveEvent::SetSong(song.clone()))
+                                    .expect("Failed to send song to player");
+                            }
                         }
+                    },
+                    ApplicationEvent::PlayerEvent(event) => match event {
+                        _ => {}
                     },
                 }
             }
@@ -79,8 +96,14 @@ impl App {
         Ok(())
     }
 
-    fn create_threads(&self, event_tx: &Sender<Event>) {
+    fn create_threads(
+        &self,
+        event_tx: &Sender<ApplicationEvent>,
+        player_rx: Receiver<PlayerReceiveEvent>,
+    ) {
         let keyboard_event_tx = event_tx.clone();
         KeyboardHandler::new(keyboard_event_tx);
+        let player_event_tx = event_tx.clone();
+        Player::new(player_event_tx, player_rx);
     }
 }

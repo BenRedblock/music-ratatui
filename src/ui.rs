@@ -68,7 +68,13 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
     // Lines
     //
     let list = List::default()
-        .items(["HI"])
+        .items(
+            app.select_handler
+                .items()
+                .iter()
+                .map(|song| song.title.clone())
+                .collect::<Vec<String>>(),
+        )
         .style(Style::new().white())
         .highlight_style(Style::new().italic())
         .highlight_symbol(">>")

@@ -10,18 +10,32 @@ use crate::song::Song;
 
 pub struct FileFinder {
     extensions: [String; 3],
+    search_path: String,
+    depth: u32,
     found_paths: Vec<PathBuf>,
 }
 
 impl FileFinder {
-    pub fn new(extensions: [String; 3]) -> Self {
+    pub fn new(extensions: [String; 3], search_path: String, depth: Option<u32>) -> Self {
         FileFinder {
             extensions,
             found_paths: Vec::new(),
+            search_path: search_path,
+            depth: depth.unwrap_or(5),
         }
     }
 
-    pub fn find_paths(&mut self, path: String, depth: u32) {
+    pub fn find_paths(&mut self, path: Option<&String>, depth: Option<u32>) {
+        let path = if let Some(path) = path {
+            path
+        } else {
+            &self.search_path
+        };
+        let depth = if let Some(depth) = depth {
+            depth
+        } else {
+            self.depth
+        };
         if let Ok(entries) = read_dir(path) {
             for entry in entries {
                 if let Ok(entry) = entry {
@@ -40,7 +54,7 @@ impl FileFinder {
                         } else if file_type.is_dir() {
                             let path = entry.path().to_string_lossy().to_string();
                             if depth > 0 {
-                                self.find_paths(path, depth - 1);
+                                self.find_paths(Some(&path), Some(depth - 1));
                             }
                         }
                     }

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+#[derive(Clone)]
 pub struct Song {
     pub title: String,
     pub author: Option<String>,
