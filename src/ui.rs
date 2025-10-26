@@ -68,12 +68,7 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
     // Lines
     //
     let list = List::default()
-        .items(
-            app.select_handler
-                .items()
-                .iter()
-                .map(|str| Text::from(str.clone())),
-        )
+        .items(["HI"])
         .style(Style::new().white())
         .highlight_style(Style::new().italic())
         .highlight_symbol(">>")

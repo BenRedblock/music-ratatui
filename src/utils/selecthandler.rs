@@ -6,11 +6,16 @@ pub struct SelectHandler<T> {
 }
 
 impl<T> SelectHandler<T> {
-    pub fn new(items: Vec<T>) -> Self {
+    pub fn new() -> Self {
         Self {
-            items,
+            items: Vec::new(),
             state: ListState::default(),
         }
+    }
+
+    pub fn set_items(&mut self, items: Vec<T>) {
+        self.items = items;
+        self.state.select(Some(0));
     }
 
     pub fn down(&mut self) {

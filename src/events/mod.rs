@@ -2,6 +2,6 @@ use crate::events::keyboard::Action;
 
 pub mod keyboard;
 
-pub enum Events {
+pub enum Event {
     Action(Action),
 }

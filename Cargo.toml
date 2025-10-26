@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
+id3 = "1.16.3"
 ratatui = "0.29.0"
 vlc-rs = "0.3.0"

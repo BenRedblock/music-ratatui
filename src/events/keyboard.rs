@@ -2,7 +2,7 @@ use std::{sync::mpsc::Sender, thread};
 
 use crossterm::event::KeyCode;
 
-use crate::events::Events;
+use crate::events::Event;
 
 pub enum Action {
     Quit,
@@ -12,11 +12,11 @@ pub enum Action {
 }
 
 pub struct KeyboardHandler {
-    event_tx: Sender<Events>,
+    event_tx: Sender<Event>,
 }
 
 impl KeyboardHandler {
-    pub fn new(event_tx: Sender<Events>) {
+    pub fn new(event_tx: Sender<Event>) {
         thread::spawn(move || KeyboardHandler { event_tx }.run());
     }
 
@@ -41,7 +41,7 @@ impl KeyboardHandler {
             .contains(crossterm::event::KeyModifiers::CONTROL)
         {
             if key_event.code == crossterm::event::KeyCode::Char('c') {
-                let _ = self.event_tx.send(Events::Action(Action::Quit));
+                let _ = self.event_tx.send(Event::Action(Action::Quit));
             }
         }
     }
@@ -49,16 +49,16 @@ impl KeyboardHandler {
     fn handle(&self, key_event: crossterm::event::KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => {
-                let _ = self.event_tx.send(Events::Action(Action::Quit));
+                let _ = self.event_tx.send(Event::Action(Action::Quit));
             }
             KeyCode::Up | KeyCode::PageUp => {
-                let _ = self.event_tx.send(Events::Action(Action::MoveUp));
+                let _ = self.event_tx.send(Event::Action(Action::MoveUp));
             }
             KeyCode::Down | KeyCode::PageDown => {
-                let _ = self.event_tx.send(Events::Action(Action::MoveDown));
+                let _ = self.event_tx.send(Event::Action(Action::MoveDown));
             }
             KeyCode::Enter => {
-                let _ = self.event_tx.send(Events::Action(Action::Select));
+                let _ = self.event_tx.send(Event::Action(Action::Select));
             }
             _ => {}
         }
