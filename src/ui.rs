@@ -1,10 +1,10 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Margin, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     symbols,
     text::Text,
-    widgets::{Block, Borders, List, Paragraph, canvas::Line},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, canvas::Line},
 };
 
 use crate::{
@@ -44,7 +44,7 @@ fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
     if app.upcoming_media_shown {
         let layout = ratatui::layout::Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Fill(1), Constraint::Length(15)])
+            .constraints([Constraint::Fill(1), Constraint::Length(30)])
             .split(rect);
         render_media_selection(app, frame, layout[0]);
         render_upcoming_media(app, frame, layout[1]);
@@ -86,16 +86,33 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
 }
 
 fn render_upcoming_media(app: &App, frame: &mut Frame, rect: Rect) {
-    let paragraph = Paragraph::new("Upcoming Media").block(
-        Block::default()
-            .border_set(symbols::border::Set {
-                top_left: symbols::line::NORMAL.vertical_right,
-                bottom_right: symbols::line::NORMAL.horizontal_up,
-                ..symbols::border::PLAIN
-            })
-            .borders(Borders::RIGHT | Borders::TOP),
-    );
-    frame.render_widget(paragraph, rect);
+    let list = List::default()
+        .items(
+            app.player_information
+                .queue
+                .iter()
+                .enumerate()
+                .map(|(index, song)| {
+                    let style = if Some(index) == app.player_information.playing_index {
+                        Style::default().yellow()
+                    } else {
+                        Style::default()
+                    };
+                    ListItem::new(song.title.clone()).style(style)
+                })
+                .collect::<Vec<ListItem>>(),
+        )
+        .block(
+            Block::default()
+                .title("Upcoming Media")
+                .border_set(symbols::border::Set {
+                    top_left: symbols::line::NORMAL.vertical_right,
+                    bottom_right: symbols::line::NORMAL.horizontal_up,
+                    ..symbols::border::PLAIN
+                })
+                .borders(Borders::RIGHT | Borders::TOP),
+        );
+    frame.render_widget(list, rect);
 }
 
 fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
@@ -123,7 +140,24 @@ fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
 }
 
 fn render_media_progressbar(app: &App, frame: &mut Frame, rect: Rect) {
-    let paragraph = Paragraph::new((app.player_information.passed_time / 1000).to_string()).block(
+    let progress = match &app.player_information.status {
+        PlayerStatus::Playing(song) => {
+            format!(
+                "{}/{}",
+                app.player_information.passed_time / 1000,
+                song.total_time / 1000
+            )
+        }
+        PlayerStatus::Paused(song) => {
+            format!(
+                "{}/{}",
+                app.player_information.passed_time / 1000,
+                song.total_time / 1000
+            )
+        }
+        _ => "No Audio".to_string(),
+    };
+    let paragraph = Paragraph::new(progress).block(
         Block::default()
             .border_set(symbols::border::Set {
                 top_left: symbols::line::NORMAL.horizontal_down,

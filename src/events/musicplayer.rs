@@ -205,10 +205,6 @@ impl Player {
         }
     }
 
-    fn play(&self) {
-        self.media_player.play().unwrap();
-    }
-
     fn create_event_thread(&self, vlc_event_tx: Sender<Event>) {
         let event_manager = self.media_player.event_manager();
 

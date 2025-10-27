@@ -1,10 +1,11 @@
 use std::{
-    fs::{DirBuilder, DirEntry, File, FileType, ReadDir, read_dir},
+    fs::{DirBuilder, DirEntry, File, FileType, ReadDir, metadata, read_dir},
     path::{Path, PathBuf},
     vec,
 };
 
 use id3::{Tag, TagLike};
+use vlc::{Instance, Media};
 
 use crate::song::Song;
 
@@ -64,14 +65,17 @@ impl FileFinder {
     }
     pub fn create_songs(&self) -> Result<Vec<Song>, id3::Error> {
         let mut vector = Vec::new();
+        let vlc_instance = Instance::new().unwrap();
         for path in &self.found_paths {
             if let Ok(tag) = Tag::read_from_path(path) {
+                let media = Media::new_path(&vlc_instance, path).unwrap();
+                media.parse();
                 let song = Song {
                     author: tag.artist().map(|s| s.to_string()),
                     playing: false,
                     time_played: 0,
                     title: tag.title().unwrap_or("Not defiended").to_string(),
-                    total_time: 20,
+                    total_time: media.duration().unwrap_or(5) as u32,
                     album: tag.album().map(|s| s.to_string()),
                     file_path: path.to_string_lossy().to_string(),
                 };
