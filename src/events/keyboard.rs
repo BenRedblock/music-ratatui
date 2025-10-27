@@ -9,6 +9,7 @@ pub enum Action {
     MoveUp,
     MoveDown,
     Select,
+    Space,
 }
 
 pub struct KeyboardHandler {
@@ -61,6 +62,9 @@ impl KeyboardHandler {
             }
             KeyCode::Enter => {
                 let _ = self.event_tx.send(ApplicationEvent::Action(Action::Select));
+            }
+            KeyCode::Char(' ') => {
+                let _ = self.event_tx.send(ApplicationEvent::Action(Action::Space));
             }
             _ => {}
         }

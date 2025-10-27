@@ -7,7 +7,10 @@ use ratatui::{
     widgets::{Block, Borders, List, Paragraph, canvas::Line},
 };
 
-use crate::App;
+use crate::{
+    App,
+    events::musicplayer::{PlayerInformation, PlayerStatus},
+};
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
         .direction(Direction::Vertical)
@@ -96,7 +99,17 @@ fn render_upcoming_media(app: &App, frame: &mut Frame, rect: Rect) {
 }
 
 fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
-    let paragraph = Paragraph::new("Media Info").block(
+    let mut paragraph = Paragraph::new("");
+
+    if let PlayerStatus::Playing(song) = &app.player_information.status {
+        let song = song.clone();
+        paragraph = Paragraph::new(format!(
+            "Title: {}\nArtist: {}",
+            song.title,
+            song.author.unwrap_or("".to_string())
+        ))
+    }
+    let paragraph = paragraph.block(
         Block::default()
             .border_set(symbols::border::Set {
                 top_left: symbols::line::NORMAL.vertical_right,
@@ -110,7 +123,7 @@ fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
 }
 
 fn render_media_progressbar(app: &App, frame: &mut Frame, rect: Rect) {
-    let paragraph = Paragraph::new("Media Progress").block(
+    let paragraph = Paragraph::new((app.player_information.passed_time / 1000).to_string()).block(
         Block::default()
             .border_set(symbols::border::Set {
                 top_left: symbols::line::NORMAL.horizontal_down,

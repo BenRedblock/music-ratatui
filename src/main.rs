@@ -8,7 +8,7 @@ use crate::{
     events::{
         ApplicationEvent,
         keyboard::{Action, KeyboardHandler},
-        musicplayer::{Player, PlayerReceiveEvent},
+        musicplayer::{Player, PlayerInformation, PlayerReceiveEvent, PlayerSendEvent},
     },
     filefinder::FileFinder,
     song::Song,
@@ -37,6 +37,7 @@ struct App {
     upcoming_media_shown: bool,
     select_handler: SelectHandler<Song>,
     file_finder: FileFinder,
+    pub player_information: PlayerInformation,
 }
 
 impl App {
@@ -50,6 +51,7 @@ impl App {
                 path,
                 Some(2),
             ),
+            player_information: PlayerInformation::default(),
         }
     }
 
@@ -85,8 +87,22 @@ impl App {
                                     .expect("Failed to send song to player");
                             }
                         }
+                        Action::Space => {
+                            player_tx
+                                .send(PlayerReceiveEvent::TogglePause)
+                                .expect("Failed to toggle pause");
+                        }
                     },
                     ApplicationEvent::PlayerEvent(event) => match event {
+                        PlayerSendEvent::Play(player_information) => {
+                            self.player_information = player_information;
+                        }
+                        PlayerSendEvent::Pause(player_information) => {
+                            self.player_information = player_information;
+                        }
+                        PlayerSendEvent::TimeChanged(player_information) => {
+                            self.player_information = player_information;
+                        }
                         _ => {}
                     },
                 }
