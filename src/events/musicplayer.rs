@@ -17,10 +17,12 @@ pub enum PlayerStatus {
 }
 
 pub enum PlayerReceiveEvent {
-    SetSong(Song),
+    SetSong(usize),
+    SetAndPlaySong(Song),
     Play,
     Pause,
     TogglePause,
+    Update,
 }
 
 pub enum PlayerSendEvent {
@@ -30,6 +32,7 @@ pub enum PlayerSendEvent {
     Pause(PlayerInformation),
     Unpause(PlayerInformation),
     Play(PlayerInformation),
+    PlayerInformation(PlayerInformation),
 }
 
 #[derive(Default)]
@@ -73,6 +76,7 @@ impl Player {
             if let Ok(event) = vlc_rx.try_recv() {
                 match event {
                     Event::MediaStateChanged(state) => {
+                        todo!("Does not get called");
                         if state == State::Ended {
                             self.song_ended();
                         }
@@ -84,16 +88,26 @@ impl Player {
                                 .expect("Error sending Play event");
                         }
                     }
+                    Event::MediaPlayerTimeChanged => {
+                        self.event_tx
+                            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
+                                self.get_player_information(),
+                            )))
+                            .expect("Error sending TimeChanged event");
+                    }
                     _ => {}
                 }
             }
             if let Ok(event) = self.player_rx.try_recv() {
                 match event {
-                    PlayerReceiveEvent::SetSong(song) => {
-                        self.play_song(&song);
+                    PlayerReceiveEvent::SetSong(index) => {
+                        self.set_song(index);
+                    }
+                    PlayerReceiveEvent::SetAndPlaySong(song) => {
+                        self.set_and_play_song(song);
                     }
                     PlayerReceiveEvent::Play => {
-                        self.media_player.play().expect("Failed to play media");
+                        self.play();
                     }
                     PlayerReceiveEvent::Pause => {
                         self.media_player.pause();
@@ -101,14 +115,21 @@ impl Player {
                     PlayerReceiveEvent::TogglePause => {
                         self.toggle_pause();
                     }
+                    PlayerReceiveEvent::Update => {
+                        self.event_tx
+                            .send(ApplicationEvent::PlayerEvent(
+                                PlayerSendEvent::PlayerInformation(self.get_player_information()),
+                            ))
+                            .expect("Error sending Update event");
+                    }
                 }
             }
             thread::sleep(Duration::from_millis(50));
-            self.event_tx
-                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
-                    self.get_player_information(),
-                )))
-                .expect("Error sending Event");
+            // self.event_tx
+            //     .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
+            //         self.get_player_information(),
+            //     )))
+            //     .expect("Error sending Event");
         }
     }
 
@@ -186,15 +207,18 @@ impl Player {
         }
     }
 
-    fn play_song(&mut self, song: &Song) {
-        self.queue.push(song.clone());
+    fn add_song_to_queue(&mut self, song: Song) {
+        self.queue.push(song);
+    }
+
+    fn set_and_play_song(&mut self, song: Song) {
+        self.add_song_to_queue(song);
         self.set_song(self.queue.len() - 1);
+        self.play();
+    }
+
+    fn play(&mut self) {
         self.media_player.play().expect("Failed to play media");
-        self.event_tx
-            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Play(
-                self.get_player_information(),
-            )))
-            .expect("Error sending play event");
     }
 
     fn set_song(&mut self, index: usize) {

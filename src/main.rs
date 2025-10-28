@@ -47,7 +47,7 @@ impl App {
             upcoming_media_shown: true,
             select_handler: SelectHandler::new(),
             file_finder: FileFinder::new(
-                [".mp3".to_string(), ".ogg".to_string(), ".".to_string()],
+                [".mp3".to_string(), ".ogg".to_string(), ".wav".to_string()],
                 path,
                 Some(2),
             ),
@@ -74,7 +74,7 @@ impl App {
             let _ = terminal.draw(|frame| {
                 ui::render(frame, self);
             });
-            if let Ok(event) = event_rx.try_recv() {
+            if let Ok(event) = event_rx.recv() {
                 match event {
                     ApplicationEvent::Action(action) => match action {
                         Action::Quit => self.exit = true,
@@ -83,7 +83,7 @@ impl App {
                         Action::Select => {
                             if let Some(song) = self.select_handler.select() {
                                 player_tx
-                                    .send(PlayerReceiveEvent::SetSong(song.clone()))
+                                    .send(PlayerReceiveEvent::SetAndPlaySong(song.clone()))
                                     .expect("Failed to send song to player");
                             }
                         }
