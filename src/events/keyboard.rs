@@ -10,6 +10,8 @@ pub enum Action {
     MoveDown,
     Select,
     Space,
+    NextSong,
+    PreviousSong,
 }
 
 pub struct KeyboardHandler {
@@ -65,6 +67,16 @@ impl KeyboardHandler {
             }
             KeyCode::Char(' ') => {
                 let _ = self.event_tx.send(ApplicationEvent::Action(Action::Space));
+            }
+            KeyCode::Left => {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::PreviousSong));
+            }
+            KeyCode::Right => {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::NextSong));
             }
             _ => {}
         }

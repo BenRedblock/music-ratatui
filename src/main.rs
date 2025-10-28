@@ -64,8 +64,12 @@ impl App {
 
         self.create_threads(&event_tx, player_rx);
         self.file_finder.find_paths(None, None);
-        self.select_handler
-            .set_items(self.file_finder.create_songs().unwrap_or(Vec::new()));
+        self.select_handler.set_items(
+            self.file_finder
+                .create_songs()
+                .unwrap_or(&Vec::new())
+                .clone(),
+        );
 
         loop {
             if self.exit {
@@ -91,6 +95,16 @@ impl App {
                             player_tx
                                 .send(PlayerReceiveEvent::TogglePause)
                                 .expect("Failed to toggle pause");
+                        }
+                        Action::PreviousSong => {
+                            player_tx
+                                .send(PlayerReceiveEvent::Previous)
+                                .expect("Failed to send previous song to player");
+                        }
+                        Action::NextSong => {
+                            player_tx
+                                .send(PlayerReceiveEvent::Next)
+                                .expect("Failed to send next song to player");
                         }
                     },
                     ApplicationEvent::PlayerEvent(event) => match event {

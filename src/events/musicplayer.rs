@@ -20,6 +20,8 @@ pub enum PlayerReceiveEvent {
     SetSong(usize),
     SetAndPlaySong(Song),
     Play,
+    Next,
+    Previous,
     Pause,
     TogglePause,
     Update,
@@ -89,9 +91,10 @@ impl Player {
                         }
                     }
                     Event::MediaPlayerTimeChanged => {
+                        let playerinfo = self.get_player_information();
                         self.event_tx
                             .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
-                                self.get_player_information(),
+                                playerinfo,
                             )))
                             .expect("Error sending TimeChanged event");
                     }
@@ -122,14 +125,35 @@ impl Player {
                             ))
                             .expect("Error sending Update event");
                     }
+                    PlayerReceiveEvent::Previous => {
+                        self.prev_song();
+                    }
+                    PlayerReceiveEvent::Next => {
+                        self.next_song();
+                    }
                 }
             }
             thread::sleep(Duration::from_millis(50));
-            // self.event_tx
-            //     .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
-            //         self.get_player_information(),
-            //     )))
-            //     .expect("Error sending Event");
+        }
+    }
+
+    fn prev_song(&mut self) {
+        if let Some(index) = self.playing_index {
+            if index == 0 {
+                return;
+            }
+            self.set_song(index - 1);
+            self.play();
+        }
+    }
+
+    fn next_song(&mut self) {
+        if let Some(index) = self.playing_index {
+            if index + 1 >= self.queue.iter().len() {
+                return;
+            }
+            self.set_song(index + 1);
+            self.play();
         }
     }
 

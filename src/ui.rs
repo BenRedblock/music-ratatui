@@ -9,7 +9,10 @@ use ratatui::{
 
 use crate::{
     App,
-    events::musicplayer::{PlayerInformation, PlayerStatus},
+    events::{
+        format_ms_to_duration_string,
+        musicplayer::{PlayerInformation, PlayerStatus},
+    },
 };
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
@@ -144,15 +147,15 @@ fn render_media_progressbar(app: &App, frame: &mut Frame, rect: Rect) {
         PlayerStatus::Playing(song) => {
             format!(
                 "{}/{}",
-                app.player_information.passed_time / 1000,
-                song.total_time / 1000
+                format_ms_to_duration_string(app.player_information.passed_time),
+                format_ms_to_duration_string(song.total_time as u64)
             )
         }
         PlayerStatus::Paused(song) => {
             format!(
                 "{}/{}",
-                app.player_information.passed_time / 1000,
-                song.total_time / 1000
+                format_ms_to_duration_string(app.player_information.passed_time),
+                format_ms_to_duration_string(song.total_time as u64)
             )
         }
         _ => "No Audio".to_string(),

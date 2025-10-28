@@ -14,6 +14,7 @@ pub struct FileFinder {
     search_path: String,
     depth: u32,
     found_paths: Vec<PathBuf>,
+    songs: Vec<Song>,
 }
 
 impl FileFinder {
@@ -23,6 +24,7 @@ impl FileFinder {
             found_paths: Vec::new(),
             search_path: search_path,
             depth: depth.unwrap_or(3),
+            songs: Vec::new(),
         }
     }
 
@@ -63,7 +65,7 @@ impl FileFinder {
             }
         }
     }
-    pub fn create_songs(&self) -> Result<Vec<Song>, id3::Error> {
+    pub fn create_songs(&mut self) -> Result<&Vec<Song>, id3::Error> {
         let mut vector = Vec::new();
         let vlc_instance = Instance::new().unwrap();
         for path in &self.found_paths {
@@ -82,6 +84,7 @@ impl FileFinder {
                 vector.push(song);
             }
         }
-        Ok(vector)
+        self.songs = vector;
+        Ok(&self.songs)
     }
 }
