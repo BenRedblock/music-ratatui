@@ -22,7 +22,7 @@ impl FileFinder {
             extensions,
             found_paths: Vec::new(),
             search_path: search_path,
-            depth: depth.unwrap_or(5),
+            depth: depth.unwrap_or(3),
         }
     }
 
@@ -54,7 +54,7 @@ impl FileFinder {
                             }
                         } else if file_type.is_dir() {
                             let path = entry.path().to_string_lossy().to_string();
-                            if depth > 0 {
+                            if depth > 0 && !entry.file_name().to_string_lossy().starts_with(".") {
                                 self.find_paths(Some(&path), Some(depth - 1));
                             }
                         }

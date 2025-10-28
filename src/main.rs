@@ -26,7 +26,7 @@ fn main() -> Result<(), std::io::Error> {
     let path = if args.len() > 1 {
         args[1].clone()
     } else {
-        "~".to_string()
+        std::env::var("HOME").unwrap_or(".".to_string())
     };
     let mut app = App::new(path);
     app.run()
