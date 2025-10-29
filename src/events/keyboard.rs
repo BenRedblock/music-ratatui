@@ -6,6 +6,7 @@ use crate::events::ApplicationEvent;
 
 pub enum Action {
     Quit,
+    SwitchWindow,
     MoveUp,
     MoveDown,
     Select,
@@ -77,6 +78,11 @@ impl KeyboardHandler {
                 let _ = self
                     .event_tx
                     .send(ApplicationEvent::Action(Action::NextSong));
+            }
+            KeyCode::Tab => {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::SwitchWindow));
             }
             _ => {}
         }

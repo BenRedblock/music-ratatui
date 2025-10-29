@@ -18,7 +18,9 @@ pub enum PlayerStatus {
 
 pub enum PlayerReceiveEvent {
     SetSong(usize),
-    SetAndPlaySong(Song),
+    SetAndPlaySong(usize),
+    CreateQueueAndPlay(Vec<Song>),
+    AddSongsToQueueAndPlay(Vec<Song>),
     Play,
     Next,
     Previous,
@@ -106,8 +108,14 @@ impl Player {
                     PlayerReceiveEvent::SetSong(index) => {
                         self.set_song(index);
                     }
-                    PlayerReceiveEvent::SetAndPlaySong(song) => {
-                        self.set_and_play_song(song);
+                    PlayerReceiveEvent::AddSongsToQueueAndPlay(songs) => {
+                        self.add_songs_to_queue(songs);
+                    }
+                    PlayerReceiveEvent::CreateQueueAndPlay(songs) => {
+                        self.create_queue_and_play(songs);
+                    }
+                    PlayerReceiveEvent::SetAndPlaySong(index) => {
+                        self.set_and_play_song(index);
                     }
                     PlayerReceiveEvent::Play => {
                         self.play();
@@ -235,7 +243,26 @@ impl Player {
         self.queue.push(song);
     }
 
-    fn set_and_play_song(&mut self, song: Song) {
+    fn set_and_play_song(&mut self, index: usize) {
+        self.set_song(index);
+        self.play();
+    }
+
+    fn create_queue_and_play(&mut self, songs: Vec<Song>) {
+        self.queue = songs;
+        if !self.queue.is_empty() {
+            self.set_song(0);
+            self.play();
+        }
+    }
+
+    fn add_songs_to_queue(&mut self, songs: Vec<Song>) {
+        for song in songs {
+            self.add_song_to_queue(song);
+        }
+    }
+
+    fn add_to_queue_and_play_song(&mut self, song: Song) {
         self.add_song_to_queue(song);
         self.set_song(self.queue.len() - 1);
         self.play();

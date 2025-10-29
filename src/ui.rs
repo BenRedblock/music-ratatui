@@ -7,6 +7,11 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, canvas::Line},
 };
 
+pub enum FocusedWindow {
+    Main,
+    Queue,
+}
+
 use crate::{
     App,
     events::{
@@ -50,7 +55,7 @@ fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
             .constraints([Constraint::Fill(1), Constraint::Length(30)])
             .split(rect);
         render_media_selection(app, frame, layout[0]);
-        render_upcoming_media(app, frame, layout[1]);
+        render_queue(app, frame, layout[1]);
     } else {
         render_media_selection(app, frame, rect);
     }
@@ -67,47 +72,66 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
             ..symbols::border::PLAIN
         },
     };
+
+    let selected_index = app.select_handler.state().selected();
+    let is_focused = matches!(app.focused_window, FocusedWindow::Main);
+    let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };
     let media_select_block = Block::default()
+        .title(block_title)
         .border_set(border_set)
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
-
-    // Lines
-    //
     let list = List::default()
         .items(
             app.select_handler
                 .items()
                 .iter()
-                .map(|song| song.title.clone())
-                .collect::<Vec<String>>(),
+                .enumerate()
+                .map(|(index, song)| {
+                    if Some(index) == selected_index && is_focused {
+                        ListItem::new(song.title.clone()).style(Style::default().bg(Color::Yellow))
+                    } else {
+                        ListItem::new(song.title.clone()).style(Style::default())
+                    }
+                })
+                .collect::<Vec<ListItem>>(),
         )
-        .style(Style::new().white())
-        .highlight_style(Style::new().italic())
-        .highlight_symbol(">>")
         .block(media_select_block);
     frame.render_stateful_widget(list, rect, &mut app.select_handler.state());
 }
 
-fn render_upcoming_media(app: &App, frame: &mut Frame, rect: Rect) {
+fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
+    let selected_queue_index = app.queue_select_handler.state().selected();
+    let is_queue_focused = matches!(app.focused_window, FocusedWindow::Queue);
+    let block_title = "Queue".to_string() + if is_queue_focused { "(*)" } else { "" };
     let list = List::default()
         .items(
-            app.player_information
-                .queue
+            app.queue_select_handler
+                .items()
                 .iter()
                 .enumerate()
                 .map(|(index, song)| {
-                    let style = if Some(index) == app.player_information.playing_index {
-                        Style::default().yellow()
+                    if Some(index) == app.player_information.playing_index {
+                        if Some(index) == selected_queue_index && is_queue_focused {
+                            ListItem::new(format!("🎶 {}", song.title.clone()))
+                                .style(Style::default().light_green().bg(Color::Yellow))
+                        } else {
+                            ListItem::new(format!("🎶 {}", song.title.clone()))
+                                .style(Style::default().light_green())
+                        }
                     } else {
-                        Style::default()
-                    };
-                    ListItem::new(song.title.clone()).style(style)
+                        if Some(index) == selected_queue_index && is_queue_focused {
+                            ListItem::new(song.title.clone())
+                                .style(Style::default().bg(Color::Yellow))
+                        } else {
+                            ListItem::new(song.title.clone()).style(Style::default())
+                        }
+                    }
                 })
                 .collect::<Vec<ListItem>>(),
         )
         .block(
             Block::default()
-                .title("Upcoming Media")
+                .title(block_title)
                 .border_set(symbols::border::Set {
                     top_left: symbols::line::NORMAL.vertical_right,
                     bottom_right: symbols::line::NORMAL.horizontal_up,
@@ -115,7 +139,7 @@ fn render_upcoming_media(app: &App, frame: &mut Frame, rect: Rect) {
                 })
                 .borders(Borders::RIGHT | Borders::TOP),
         );
-    frame.render_widget(list, rect);
+    frame.render_stateful_widget(list, rect, &mut app.queue_select_handler.state());
 }
 
 fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {

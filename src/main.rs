@@ -12,6 +12,7 @@ use crate::{
     },
     filefinder::FileFinder,
     song::Song,
+    ui::FocusedWindow,
     utils::selecthandler::SelectHandler,
 };
 
@@ -36,8 +37,10 @@ struct App {
     exit: bool,
     upcoming_media_shown: bool,
     select_handler: SelectHandler<Song>,
+    queue_select_handler: SelectHandler<Song>,
     file_finder: FileFinder,
     pub player_information: PlayerInformation,
+    focused_window: FocusedWindow,
 }
 
 impl App {
@@ -46,12 +49,14 @@ impl App {
             exit: false,
             upcoming_media_shown: true,
             select_handler: SelectHandler::new(),
+            queue_select_handler: SelectHandler::new(),
             file_finder: FileFinder::new(
                 [".mp3".to_string(), ".ogg".to_string(), ".wav".to_string()],
                 path,
                 Some(2),
             ),
             player_information: PlayerInformation::default(),
+            focused_window: FocusedWindow::Main,
         }
     }
 
@@ -78,19 +83,19 @@ impl App {
             let _ = terminal.draw(|frame| {
                 ui::render(frame, self);
             });
-            if let Ok(event) = event_rx.recv() {
+            if let Ok(event) = event_rx.try_recv() {
                 match event {
                     ApplicationEvent::Action(action) => match action {
                         Action::Quit => self.exit = true,
-                        Action::MoveUp => self.select_handler.up(),
-                        Action::MoveDown => self.select_handler.down(),
-                        Action::Select => {
-                            if let Some(song) = self.select_handler.select() {
-                                player_tx
-                                    .send(PlayerReceiveEvent::SetAndPlaySong(song.clone()))
-                                    .expect("Failed to send song to player");
+                        Action::SwitchWindow => {
+                            self.focused_window = match self.focused_window {
+                                FocusedWindow::Main => FocusedWindow::Queue,
+                                FocusedWindow::Queue => FocusedWindow::Main,
                             }
                         }
+                        Action::MoveUp => self.move_cursor_up(),
+                        Action::MoveDown => self.move_cursor_down(),
+                        Action::Select => self.select_at_cursor(&player_tx),
                         Action::Space => {
                             player_tx
                                 .send(PlayerReceiveEvent::TogglePause)
@@ -110,12 +115,18 @@ impl App {
                     ApplicationEvent::PlayerEvent(event) => match event {
                         PlayerSendEvent::Play(player_information) => {
                             self.player_information = player_information;
+                            self.queue_select_handler
+                                .set_items(self.player_information.queue.clone());
                         }
                         PlayerSendEvent::Pause(player_information) => {
                             self.player_information = player_information;
+                            self.queue_select_handler
+                                .set_items(self.player_information.queue.clone());
                         }
                         PlayerSendEvent::TimeChanged(player_information) => {
                             self.player_information = player_information;
+                            self.queue_select_handler
+                                .set_items(self.player_information.queue.clone());
                         }
                         _ => {}
                     },
@@ -124,6 +135,42 @@ impl App {
         }
         ratatui::restore();
         Ok(())
+    }
+
+    fn move_cursor_down(&mut self) {
+        match self.focused_window {
+            FocusedWindow::Queue => self.queue_select_handler.down(),
+            FocusedWindow::Main => self.select_handler.down(),
+        }
+    }
+
+    fn move_cursor_up(&mut self) {
+        match self.focused_window {
+            FocusedWindow::Queue => self.queue_select_handler.up(),
+            FocusedWindow::Main => self.select_handler.up(),
+        }
+    }
+
+    fn select_at_cursor(&mut self, player_tx: &Sender<PlayerReceiveEvent>) {
+        match self.focused_window {
+            FocusedWindow::Queue => {
+                if let Some(index) = self.queue_select_handler.state().selected() {
+                    player_tx
+                        .send(PlayerReceiveEvent::SetSong(index))
+                        .expect("Failed to set song");
+                }
+            }
+            FocusedWindow::Main => {
+                if let Some(index) = self.select_handler.state().selected() {
+                    let (queue1, queue2) = self.select_handler.items().split_at(index);
+                    let mut queue2 = queue2.to_vec();
+                    queue2.append(&mut queue1.to_vec());
+                    player_tx
+                        .send(PlayerReceiveEvent::CreateQueueAndPlay(queue2))
+                        .expect("Failed to send song to player");
+                }
+            }
+        }
     }
 
     fn create_threads(
