@@ -8,7 +8,9 @@ use crate::{
     events::{
         ApplicationEvent,
         keyboard::{Action, KeyboardHandler},
-        musicplayer::{Player, PlayerInformation, PlayerReceiveEvent, PlayerSendEvent},
+        musicplayer::{
+            Player, PlayerInformation, PlayerReceiveEvent, PlayerSendEvent, PlayerStatus,
+        },
     },
     filefinder::FileFinder,
     song::Song,
@@ -115,18 +117,17 @@ impl App {
                     ApplicationEvent::PlayerEvent(event) => match event {
                         PlayerSendEvent::Play(player_information) => {
                             self.player_information = player_information;
-                            self.queue_select_handler
-                                .set_items(self.player_information.queue.clone());
                         }
-                        PlayerSendEvent::Pause(player_information) => {
-                            self.player_information = player_information;
-                            self.queue_select_handler
-                                .set_items(self.player_information.queue.clone());
+                        PlayerSendEvent::Pause => {
+                            if let PlayerStatus::Playing(song) = &self.player_information.status {
+                                self.player_information.status = PlayerStatus::Paused(song.clone());
+                            }
                         }
                         PlayerSendEvent::TimeChanged(player_information) => {
                             self.player_information = player_information;
-                            self.queue_select_handler
-                                .set_items(self.player_information.queue.clone());
+                        }
+                        PlayerSendEvent::QueueUpdate(queue) => {
+                            self.queue_select_handler.set_items(queue);
                         }
                         _ => {}
                     },
@@ -156,7 +157,7 @@ impl App {
             FocusedWindow::Queue => {
                 if let Some(index) = self.queue_select_handler.state().selected() {
                     player_tx
-                        .send(PlayerReceiveEvent::SetSong(index))
+                        .send(PlayerReceiveEvent::SetAndPlaySong(index))
                         .expect("Failed to set song");
                 }
             }

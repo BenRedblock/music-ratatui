@@ -148,7 +148,15 @@ fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
     if let PlayerStatus::Playing(song) = &app.player_information.status {
         let song = song.clone();
         paragraph = Paragraph::new(format!(
-            "Title: {}\nArtist: {}",
+            "{}\n{}\nPlaying",
+            song.title,
+            song.author.unwrap_or("".to_string())
+        ))
+    }
+    if let PlayerStatus::Paused(song) = &app.player_information.status {
+        let song = song.clone();
+        paragraph = Paragraph::new(format!(
+            "{}\n{}\nPaused",
             song.title,
             song.author.unwrap_or("".to_string())
         ))

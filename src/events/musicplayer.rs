@@ -4,6 +4,9 @@ use std::{
     time::Duration,
 };
 
+use souvlaki::{
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
+};
 use vlc::{Event, EventType, Instance, Media, MediaPlayer, MediaPlayerAudioEx, State};
 
 use crate::{events::ApplicationEvent, song::Song};
@@ -33,10 +36,16 @@ pub enum PlayerSendEvent {
     PlayerEnded(PlayerInformation),
     NextSong(PlayerInformation),
     TimeChanged(PlayerInformation),
-    Pause(PlayerInformation),
+    Pause,
     Unpause(PlayerInformation),
     Play(PlayerInformation),
     PlayerInformation(PlayerInformation),
+    QueueUpdate(Vec<Song>),
+}
+
+enum PlayerBackendEvent {
+    VLCEvent(Event),
+    MediaControls(MediaControlEvent),
 }
 
 #[derive(Default)]
@@ -55,12 +64,31 @@ pub struct Player {
     media_player: MediaPlayer,
     event_tx: Sender<ApplicationEvent>,
     player_rx: Receiver<PlayerReceiveEvent>,
+    media_controls: MediaControls,
 }
 
 impl Player {
     pub fn new(event_tx: Sender<ApplicationEvent>, player_rx: Receiver<PlayerReceiveEvent>) {
         thread::spawn(move || {
             let instance = Instance::new().unwrap();
+            #[cfg(not(target_os = "windows"))]
+            let hwnd = None;
+
+            #[cfg(target_os = "windows")]
+            let hwnd = {
+                use std::os::raw;
+
+                use raw_window_handle::windows::WindowsHandle;
+
+                let handle: WindowsHandle = raw_window_handle;
+                Some(handle.hwnd)
+            };
+
+            let config = PlatformConfig {
+                dbus_name: "musictui",
+                display_name: "Musictui",
+                hwnd,
+            };
             Player {
                 queue: Vec::new(),
                 playing_index: None,
@@ -68,39 +96,50 @@ impl Player {
                 vlc_instance: instance,
                 event_tx,
                 player_rx,
+                media_controls: MediaControls::new(config).unwrap(),
             }
             .run()
         });
     }
 
     pub fn run(&mut self) {
-        let (vlc_tx, vlc_rx) = channel::<Event>();
+        let (vlc_tx, vlc_rx) = channel::<PlayerBackendEvent>();
         self.create_event_thread(vlc_tx);
         loop {
             if let Ok(event) = vlc_rx.try_recv() {
                 match event {
-                    Event::MediaStateChanged(state) => {
-                        todo!("Does not get called");
-                        if state == State::Ended {
-                            self.song_ended();
-                        }
-                        if state == State::Playing {
+                    PlayerBackendEvent::VLCEvent(event) => match event {
+                        Event::MediaPlayerTimeChanged => {
+                            let playerinfo = self.get_player_information();
                             self.event_tx
-                                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Play(
-                                    self.get_player_information(),
+                                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
+                                    playerinfo,
                                 )))
-                                .expect("Error sending Play event");
+                                .expect("Error sending TimeChanged event");
                         }
-                    }
-                    Event::MediaPlayerTimeChanged => {
-                        let playerinfo = self.get_player_information();
-                        self.event_tx
-                            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
-                                playerinfo,
-                            )))
-                            .expect("Error sending TimeChanged event");
-                    }
-                    _ => {}
+                        Event::MediaPlayerStopped => {
+                            self.next_song();
+                        }
+                        _ => {}
+                    },
+                    PlayerBackendEvent::MediaControls(event) => match event {
+                        MediaControlEvent::Pause => {
+                            self.pause();
+                        }
+                        MediaControlEvent::Next => {
+                            self.next_song();
+                        }
+                        MediaControlEvent::Previous => {
+                            self.prev_song();
+                        }
+                        MediaControlEvent::Play => {
+                            self.play();
+                        }
+                        MediaControlEvent::Toggle => {
+                            self.toggle_pause();
+                        }
+                        _ => {}
+                    },
                 }
             }
             if let Ok(event) = self.player_rx.try_recv() {
@@ -121,7 +160,7 @@ impl Player {
                         self.play();
                     }
                     PlayerReceiveEvent::Pause => {
-                        self.media_player.pause();
+                        self.pause();
                     }
                     PlayerReceiveEvent::TogglePause => {
                         self.toggle_pause();
@@ -169,9 +208,7 @@ impl Player {
         if let Some(current_index) = self.playing_index {
             let next_index = current_index + 1;
             if next_index < self.queue.len() {
-                self.set_song(next_index);
-                self.media_player.play().unwrap();
-                self.playing_index = Some(next_index);
+                self.set_and_play_song(next_index);
                 self.event_tx
                     .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::NextSong(
                         self.get_player_information(),
@@ -223,24 +260,19 @@ impl Player {
 
     fn toggle_pause(&mut self) {
         if self.media_player.is_playing() {
-            self.media_player.pause();
-            self.event_tx
-                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Pause(
-                    self.get_player_information(),
-                )))
-                .expect("Error sending pause event");
+            self.pause();
         } else {
-            self.media_player.play().expect("Error playing media");
-            self.event_tx
-                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Unpause(
-                    self.get_player_information(),
-                )))
-                .expect("Error sending unpause event");
+            self.pause();
         }
     }
 
     fn add_song_to_queue(&mut self, song: Song) {
         self.queue.push(song);
+        self.event_tx
+            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::QueueUpdate(
+                self.queue.clone(),
+            )))
+            .expect("Error sending queue update event");
     }
 
     fn set_and_play_song(&mut self, index: usize) {
@@ -250,6 +282,11 @@ impl Player {
 
     fn create_queue_and_play(&mut self, songs: Vec<Song>) {
         self.queue = songs;
+        self.event_tx
+            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::QueueUpdate(
+                self.queue.clone(),
+            )))
+            .expect("Error sending queue update event");
         if !self.queue.is_empty() {
             self.set_song(0);
             self.play();
@@ -260,6 +297,11 @@ impl Player {
         for song in songs {
             self.add_song_to_queue(song);
         }
+        self.event_tx
+            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::QueueUpdate(
+                self.queue.clone(),
+            )))
+            .expect("Error sending queue update event");
     }
 
     fn add_to_queue_and_play_song(&mut self, song: Song) {
@@ -270,6 +312,21 @@ impl Player {
 
     fn play(&mut self) {
         self.media_player.play().expect("Failed to play media");
+        if let Some(song) = self.get_current_song() {
+            self.media_controls
+                .set_playback(MediaPlayback::Playing { progress: None })
+                .unwrap();
+        }
+    }
+
+    fn pause(&mut self) {
+        self.media_player.pause();
+        self.event_tx
+            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Pause))
+            .expect("Error sending Pause event");
+        self.media_controls
+            .set_playback(MediaPlayback::Paused { progress: None })
+            .unwrap();
     }
 
     fn set_song(&mut self, index: usize) {
@@ -277,21 +334,42 @@ impl Player {
             let media = Media::new_path(&self.vlc_instance, &song.file_path).unwrap();
             self.playing_index = Some(index);
             self.media_player.set_media(&media);
+            self.media_controls
+                .set_metadata(MediaMetadata {
+                    title: Some(&song.title),
+                    artist: Some("Slowdive"),
+                    album: Some("Souvlaki"),
+                    ..Default::default()
+                })
+                .unwrap();
         }
     }
 
-    fn create_event_thread(&self, vlc_event_tx: Sender<Event>) {
+    fn get_current_song(&self) -> Option<&Song> {
+        if let Some(index) = self.playing_index {
+            if let Some(song) = self.queue.get(index) {
+                return Some(song);
+            }
+        }
+        None
+    }
+
+    fn create_event_thread(&mut self, player_backend_event_tx: Sender<PlayerBackendEvent>) {
         let event_manager = self.media_player.event_manager();
 
-        let event_tx = vlc_event_tx.clone();
+        let event_tx = player_backend_event_tx.clone();
         let _ = event_manager.attach(EventType::MediaPlayerTimeChanged, move |_, _| {
-            let _ = event_tx.send(Event::MediaPlayerTimeChanged);
+            let _ = event_tx.send(PlayerBackendEvent::VLCEvent(Event::MediaPlayerTimeChanged));
         });
-        let event_tx = vlc_event_tx.clone();
-        let _ = event_manager.attach(EventType::MediaStateChanged, move |event, _| {
-            if let Event::MediaStateChanged(state) = event {
-                let _ = event_tx.send(Event::MediaStateChanged(state));
-            }
+        let event_tx = player_backend_event_tx.clone();
+        let _ = event_manager.attach(EventType::MediaPlayerStopped, move |event, _| {
+            let _ = event_tx.send(PlayerBackendEvent::VLCEvent(Event::MediaPlayerStopped));
+        });
+
+        // MediaControlls
+        let event_tx = player_backend_event_tx.clone();
+        let _ = self.media_controls.attach(move |event: MediaControlEvent| {
+            let _ = event_tx.send(PlayerBackendEvent::MediaControls(event));
         });
     }
 }
