@@ -74,8 +74,6 @@ impl FileFinder {
                 media.parse();
                 let song = Song {
                     author: tag.artist().map(|s| s.to_string()),
-                    playing: false,
-                    time_played: 0,
                     title: tag.title().unwrap_or("Not defiended").to_string(),
                     total_time: media.duration().unwrap_or(5) as u32,
                     album: tag.album().map(|s| s.to_string()),
