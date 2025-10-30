@@ -33,12 +33,11 @@ pub enum PlayerReceiveEvent {
 }
 
 pub enum PlayerSendEvent {
-    PlayerEnded(PlayerInformation),
-    NextSong(PlayerInformation),
-    TimeChanged(PlayerInformation),
-    Pause,
-    Unpause(PlayerInformation),
-    Play(PlayerInformation),
+    PlayerEnded,
+    NextSong,
+    TimeChanged(u64),
+    Pause(usize),
+    Play(usize),
     PlayerInformation(PlayerInformation),
     QueueUpdate(Vec<Song>),
 }
@@ -110,10 +109,11 @@ impl Player {
                 match event {
                     PlayerBackendEvent::VLCEvent(event) => match event {
                         Event::MediaPlayerTimeChanged => {
-                            let playerinfo = self.get_player_information();
+                            let passed_time = self.media_player.get_time().unwrap_or(0) as u64;
+
                             self.event_tx
                                 .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::TimeChanged(
-                                    playerinfo,
+                                    passed_time,
                                 )))
                                 .expect("Error sending TimeChanged event");
                         }
@@ -197,31 +197,17 @@ impl Player {
     fn next_song(&mut self) {
         if let Some(index) = self.playing_index {
             if index + 1 >= self.queue.iter().len() {
+                self.playing_index = None;
+                self.event_tx
+                    .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::PlayerEnded))
+                    .expect("Failed to send player ended event");
                 return;
             }
             self.set_song(index + 1);
+            self.event_tx
+                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::NextSong))
+                .expect("Failed to send next song event");
             self.play();
-        }
-    }
-
-    fn song_ended(&mut self) {
-        if let Some(current_index) = self.playing_index {
-            let next_index = current_index + 1;
-            if next_index < self.queue.len() {
-                self.set_and_play_song(next_index);
-                self.event_tx
-                    .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::NextSong(
-                        self.get_player_information(),
-                    )))
-                    .unwrap();
-            } else {
-                self.playing_index = None;
-                self.event_tx
-                    .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::PlayerEnded(
-                        self.get_player_information(),
-                    )))
-                    .unwrap();
-            }
         }
     }
 
@@ -311,8 +297,11 @@ impl Player {
     }
 
     fn play(&mut self) {
-        self.media_player.play().expect("Failed to play media");
-        if let Some(song) = self.get_current_song() {
+        if let Some((_song, index)) = self.get_current_song() {
+            self.media_player.play().expect("Failed to play media");
+            self.event_tx
+                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Play(index)))
+                .expect("Error sending Play event");
             self.media_controls
                 .set_playback(MediaPlayback::Playing { progress: None })
                 .unwrap();
@@ -320,13 +309,15 @@ impl Player {
     }
 
     fn pause(&mut self) {
-        self.media_player.pause();
-        self.event_tx
-            .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Pause))
-            .expect("Error sending Pause event");
-        self.media_controls
-            .set_playback(MediaPlayback::Paused { progress: None })
-            .unwrap();
+        if let Some((_song, index)) = self.get_current_song() {
+            self.media_player.pause();
+            self.event_tx
+                .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::Pause(index)))
+                .expect("Error sending Play event");
+            self.media_controls
+                .set_playback(MediaPlayback::Paused { progress: None })
+                .unwrap();
+        }
     }
 
     fn set_song(&mut self, index: usize) {
@@ -345,10 +336,10 @@ impl Player {
         }
     }
 
-    fn get_current_song(&self) -> Option<&Song> {
+    fn get_current_song(&self) -> Option<(&Song, usize)> {
         if let Some(index) = self.playing_index {
             if let Some(song) = self.queue.get(index) {
-                return Some(song);
+                return Some((song, index));
             }
         }
         None

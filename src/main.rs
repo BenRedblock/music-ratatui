@@ -2,6 +2,8 @@ use std::{
     env,
     path::Path,
     sync::mpsc::{self, Receiver, Sender, channel},
+    thread,
+    time::Duration,
 };
 
 use crate::{
@@ -115,24 +117,46 @@ impl App {
                         }
                     },
                     ApplicationEvent::PlayerEvent(event) => match event {
-                        PlayerSendEvent::Play(player_information) => {
-                            self.player_information = player_information;
-                        }
-                        PlayerSendEvent::Pause => {
-                            if let PlayerStatus::Playing(song) = &self.player_information.status {
-                                self.player_information.status = PlayerStatus::Paused(song.clone());
+                        PlayerSendEvent::Play(playing_index) => {
+                            self.player_information.playing_index = Some(playing_index);
+                            if let Some(song) = self.get_current_song() {
+                                self.player_information.status =
+                                    PlayerStatus::Playing(song.clone());
                             }
                         }
-                        PlayerSendEvent::TimeChanged(player_information) => {
-                            self.player_information = player_information;
+                        PlayerSendEvent::Pause(playing_index) => {
+                            self.player_information.playing_index = Some(playing_index);
+                            if let Some(song) = self.get_current_song() {
+                                self.player_information.status =
+                                    PlayerStatus::Playing(song.clone());
+                            }
+                        }
+                        PlayerSendEvent::TimeChanged(passed_time) => {
+                            self.player_information.passed_time = passed_time;
                         }
                         PlayerSendEvent::QueueUpdate(queue) => {
+                            self.player_information.queue = queue.clone();
                             self.queue_select_handler.set_items(queue);
                         }
-                        _ => {}
+                        PlayerSendEvent::NextSong => {
+                            self.player_information.playing_index =
+                                self.player_information.playing_index.map(|index| index + 1);
+                            if let Some(song) = self.get_current_song() {
+                                self.player_information.status =
+                                    PlayerStatus::Playing(song.clone());
+                            }
+                        }
+                        PlayerSendEvent::PlayerEnded => {
+                            self.player_information.playing_index = None;
+                            self.player_information.status = PlayerStatus::NoAudioSelected;
+                        }
+                        PlayerSendEvent::PlayerInformation(player_information) => {
+                            self.player_information = player_information;
+                        }
                     },
                 }
             }
+            thread::sleep(Duration::from_millis(20));
         }
         ratatui::restore();
         Ok(())
@@ -171,6 +195,14 @@ impl App {
                         .expect("Failed to send song to player");
                 }
             }
+        }
+    }
+
+    fn get_current_song(&self) -> Option<&Song> {
+        if let Some(index) = self.player_information.playing_index {
+            self.player_information.queue.get(index)
+        } else {
+            None
         }
     }
 

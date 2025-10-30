@@ -198,6 +198,7 @@ fn render_media_progressbar(app: &App, frame: &mut Frame, rect: Rect) {
                 top_left: symbols::line::NORMAL.horizontal_down,
                 bottom_left: symbols::line::NORMAL.vertical_left,
                 top_right: symbols::line::NORMAL.vertical_left,
+
                 ..symbols::border::PLAIN
             })
             .borders(Borders::BOTTOM | Borders::TOP | Borders::RIGHT),
