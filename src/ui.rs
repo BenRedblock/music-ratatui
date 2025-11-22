@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Margin, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     symbols,
     text::Text,
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, canvas::Line},
@@ -10,14 +10,13 @@ use ratatui::{
 pub enum FocusedWindow {
     Main,
     Queue,
+    Search,
 }
 
 use crate::{
     App,
-    events::{
-        format_ms_to_duration_string,
-        musicplayer::{PlayerInformation, PlayerStatus},
-    },
+    events::{format_ms_to_duration_string, musicplayer::PlayerStatus},
+    utils::{input::InputMode, selecthandler::SelectHandlerItem},
 };
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
@@ -49,16 +48,34 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 }
 
 fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
+    let layout = ratatui::layout::Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Fill(1)])
+        .split(rect);
+    let search_rect = layout[0];
+    render_search(app, frame, search_rect);
+    let bottom_rect = layout[1];
+
     if app.upcoming_media_shown {
         let layout = ratatui::layout::Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Fill(1), Constraint::Length(30)])
-            .split(rect);
+            .split(bottom_rect);
         render_media_selection(app, frame, layout[0]);
         render_queue(app, frame, layout[1]);
     } else {
         render_media_selection(app, frame, rect);
     }
+}
+
+fn render_search(app: &App, frame: &mut Frame, rect: Rect) {
+    let input = Paragraph::new("test".to_string())
+        .style(match InputMode::Editing {
+            InputMode::Normal => Style::default(),
+            InputMode::Editing => Style::default().fg(Color::Yellow),
+        })
+        .block(Block::bordered().title("Input"));
+    frame.render_widget(input, rect);
 }
 
 fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
@@ -72,9 +89,13 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
             ..symbols::border::PLAIN
         },
     };
-
-    let selected_index = app.select_handler.state().selected();
-    let is_focused = matches!(app.focused_window, FocusedWindow::Main);
+    let select_handler = match app.focused_window {
+        FocusedWindow::Main => &mut app.select_handler,
+        FocusedWindow::Queue => &mut app.select_handler,
+        FocusedWindow::Search => &mut app.search_handler.selecthandler,
+    };
+    let selected_index = select_handler.state().selected();
+    let is_focused = !matches!(app.focused_window, FocusedWindow::Queue);
     let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };
     let media_select_block = Block::default()
         .title(block_title)

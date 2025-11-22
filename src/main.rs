@@ -15,18 +15,21 @@ use crate::{
         },
     },
     filefinder::FileFinder,
+    searchhandler::SearchHandler,
     song::Song,
     ui::FocusedWindow,
     utils::selecthandler::SelectHandler,
 };
-
 mod events;
+mod fetch;
 mod filefinder;
+mod searchhandler;
 mod song;
 mod ui;
 mod utils;
 
-fn main() -> Result<(), std::io::Error> {
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
     let args: Vec<String> = env::args().collect();
     let path = if args.len() > 1 {
         args[1].clone()
@@ -34,7 +37,8 @@ fn main() -> Result<(), std::io::Error> {
         std::env::var("HOME").unwrap_or(".".to_string())
     };
     let mut app = App::new(path);
-    app.run()
+    let res = app.run();
+    res
 }
 
 struct App {
@@ -45,6 +49,7 @@ struct App {
     file_finder: FileFinder,
     pub player_information: PlayerInformation,
     focused_window: FocusedWindow,
+    search_handler: SearchHandler,
 }
 
 impl App {
@@ -61,6 +66,7 @@ impl App {
             ),
             player_information: PlayerInformation::default(),
             focused_window: FocusedWindow::Main,
+            search_handler: SearchHandler::new(),
         }
     }
 
@@ -95,6 +101,7 @@ impl App {
                             self.focused_window = match self.focused_window {
                                 FocusedWindow::Main => FocusedWindow::Queue,
                                 FocusedWindow::Queue => FocusedWindow::Main,
+                                _ => FocusedWindow::Main,
                             }
                         }
                         Action::MoveUp => self.move_cursor_up(),
@@ -166,6 +173,7 @@ impl App {
         match self.focused_window {
             FocusedWindow::Queue => self.queue_select_handler.down(),
             FocusedWindow::Main => self.select_handler.down(),
+            _ => {}
         }
     }
 
@@ -173,6 +181,7 @@ impl App {
         match self.focused_window {
             FocusedWindow::Queue => self.queue_select_handler.up(),
             FocusedWindow::Main => self.select_handler.up(),
+            _ => {}
         }
     }
 
@@ -195,6 +204,7 @@ impl App {
                         .expect("Failed to send song to player");
                 }
             }
+            _ => {}
         }
     }
 

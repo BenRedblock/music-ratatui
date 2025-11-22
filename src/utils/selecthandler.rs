@@ -1,11 +1,15 @@
 use ratatui::widgets::ListState;
 
-pub struct SelectHandler<T> {
+pub trait SelectHandlerItem {
+    fn title(&self) -> String;
+}
+
+pub struct SelectHandler<T: SelectHandlerItem> {
     items: Vec<T>,
     state: ListState,
 }
 
-impl<T> SelectHandler<T> {
+impl<T: SelectHandlerItem> SelectHandler<T> {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
