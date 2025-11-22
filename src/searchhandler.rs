@@ -1,32 +1,30 @@
 use musicbrainz_rs::entity::recording::Recording;
 
-use crate::{fetch::search::fetch_recording, utils::selecthandler::SelectHandler};
+use crate::{fetch::search::fetch_recording, song::Song, utils::selecthandler::SelectHandler};
 
 pub struct SearchHandler {
     query: String,
-    pub selecthandler: SelectHandler<Recording>,
+    pub select_handler: SelectHandler<Song>,
 }
 
 impl SearchHandler {
     pub fn new() -> Self {
         SearchHandler {
             query: "".to_string(),
-            selecthandler: SelectHandler::new(),
+            select_handler: SelectHandler::new(),
         }
     }
 
-    pub async fn add_char_to_query(&mut self, char: char) {
+    pub fn add_char_to_query(&mut self, char: char) {
         self.query.push(char);
-        let _ = self.search();
     }
 
-    pub async fn remove_last_char(&mut self) {
+    pub fn remove_last_char(&mut self) {
         self.query.pop();
-        let _ = self.search();
     }
 
-    async fn search(&mut self) {
-        self.selecthandler
+    pub async fn search(&mut self) {
+        self.select_handler
             .set_items(fetch_recording(&self.query).await.unwrap_or(Vec::new()));
     }
 

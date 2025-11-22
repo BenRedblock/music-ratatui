@@ -1,13 +1,13 @@
 use musicbrainz_rs::{
     entity::{
         artist::{Artist, ArtistSearchQuery},
-        recording::{Recording, RecordingSearchQuery},
+        recording::{Recording, RecordingSearchQuery, RecordingSearchQueryLuceneQueryBuilder},
     },
     prelude::*,
 };
 use reqwest::Error;
 
-use crate::utils::selecthandler::SelectHandlerItem;
+use crate::{song::Song, utils::selecthandler::SelectHandlerItem};
 
 pub async fn fetch_artists_manual() -> Result<(), Error> {
     let client = reqwest::Client::new();
@@ -26,12 +26,71 @@ pub async fn fetch_artists_manual() -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn fetch_recording(query: &str) -> Result<Vec<Recording>, musicbrainz_rs::Error> {
-    let query = RecordingSearchQuery::query_builder()
-        .recording(query)
-        .build();
+fn create_query(input: &str, max_results: u32) -> String {
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    let mut base_string = format!("query=recording:\"{}\" OR artist:\"{}\"", input, input);
+    if parts.is_empty() {
+        return "".to_string();
+    }
+    if parts.len() > 1 {
+        // Split: "Title" ... "Artist"
+        for i in 1..parts.len() {
+            let (left, right) = parts.split_at(i);
+            base_string = format!(
+                "{} OR (recording:\"{}\" AND artist:\"{}\")",
+                base_string,
+                &left.join(" "),
+                &right.join(" ")
+            );
+        }
 
-    let query_result = Recording::search(query).execute().await?.entities;
+        // Reverse Split: "Artist" ... "Title"
+        for i in 1..parts.len() {
+            let (left, right) = parts.split_at(i);
+            base_string = format!(
+                "{} OR (artist:\"{}\" AND recording:\"{}\")",
+                base_string,
+                &left.join(" "),
+                &right.join(" ")
+            );
+        }
+    }
+    return format!("{}&limit={}", base_string, max_results);
+}
+
+pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, musicbrainz_rs::Error> {
+    let search_string = create_query(query, 10);
+    let query_result = Recording::search(search_string)
+        .execute()
+        .await?
+        .entities
+        .iter()
+        .map(|recording| {
+            let artist = recording
+                .artist_credit
+                .as_ref()
+                .and_then(|r| r.first())
+                .map(|r| Some(r.artist.name.clone()))
+                .unwrap_or(None);
+            let album = recording
+                .releases
+                .as_ref()
+                .and_then(|rels| rels.get(0))
+                .and_then(|release| release.release_group.as_ref())
+                .map(|rg| Some(rg.title.clone()))
+                .unwrap_or(None);
+            let title = recording.title.clone();
+            let total_time = recording.length.unwrap_or(0) / 1000;
+
+            return Song {
+                album,
+                author: artist,
+                title,
+                total_time,
+                file_path: String::new(),
+            };
+        })
+        .collect();
 
     Ok(query_result)
 }

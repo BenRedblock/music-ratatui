@@ -13,6 +13,9 @@ pub enum Action {
     Space,
     NextSong,
     PreviousSong,
+    Char(char),
+    Backspace,
+    Esc,
 }
 
 pub struct KeyboardHandler {
@@ -44,17 +47,24 @@ impl KeyboardHandler {
             .modifiers
             .contains(crossterm::event::KeyModifiers::CONTROL)
         {
-            if key_event.code == crossterm::event::KeyCode::Char('c') {
+            if let crossterm::event::KeyCode::Char('c') = key_event.code {
                 let _ = self.event_tx.send(ApplicationEvent::Action(Action::Quit));
+            }
+        }
+        if key_event
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::SHIFT)
+        {
+            if let crossterm::event::KeyCode::Char(c) = key_event.code {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::Char(c)));
             }
         }
     }
 
     fn handle(&self, key_event: crossterm::event::KeyEvent) {
         match key_event.code {
-            KeyCode::Char('q') => {
-                let _ = self.event_tx.send(ApplicationEvent::Action(Action::Quit));
-            }
             KeyCode::Up | KeyCode::PageUp => {
                 let _ = self.event_tx.send(ApplicationEvent::Action(Action::MoveUp));
             }
@@ -83,6 +93,19 @@ impl KeyboardHandler {
                 let _ = self
                     .event_tx
                     .send(ApplicationEvent::Action(Action::SwitchWindow));
+            }
+            KeyCode::Char(char) => {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::Char(char)));
+            }
+            KeyCode::Backspace => {
+                let _ = self
+                    .event_tx
+                    .send(ApplicationEvent::Action(Action::Backspace));
+            }
+            KeyCode::Esc => {
+                let _ = self.event_tx.send(ApplicationEvent::Action(Action::Esc));
             }
             _ => {}
         }

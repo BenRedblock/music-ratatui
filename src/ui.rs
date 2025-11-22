@@ -7,16 +7,13 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, canvas::Line},
 };
 
-pub enum FocusedWindow {
-    Main,
-    Queue,
-    Search,
-}
-
 use crate::{
-    App,
+    App, CurrentScreen, FocusedWindowMain,
     events::{format_ms_to_duration_string, musicplayer::PlayerStatus},
-    utils::{input::InputMode, selecthandler::SelectHandlerItem},
+    utils::{
+        input::InputMode,
+        selecthandler::{SelectHandler, SelectHandlerItem},
+    },
 };
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
@@ -68,11 +65,14 @@ fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
     }
 }
 
-fn render_search(app: &App, frame: &mut Frame, rect: Rect) {
-    let input = Paragraph::new("test".to_string())
-        .style(match InputMode::Editing {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Yellow),
+fn render_search(app: &mut App, frame: &mut Frame, rect: Rect) {
+    let input = Paragraph::new(app.search_handler.get_query())
+        .style(match &app.current_screen {
+            CurrentScreen::Main(focused_window) => match focused_window {
+                FocusedWindowMain::Search => Style::default().fg(Color::Yellow),
+                _ => Style::default(),
+            },
+            _ => Style::default(),
         })
         .block(Block::bordered().title("Input"));
     frame.render_widget(input, rect);
@@ -89,13 +89,15 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
             ..symbols::border::PLAIN
         },
     };
-    let select_handler = match app.focused_window {
-        FocusedWindow::Main => &mut app.select_handler,
-        FocusedWindow::Queue => &mut app.select_handler,
-        FocusedWindow::Search => &mut app.search_handler.selecthandler,
+    let (select_handler, is_focused) = match &mut app.current_screen {
+        CurrentScreen::Main(focused_window) => match focused_window {
+            FocusedWindowMain::Queue => (&mut app.queue_select_handler, false),
+            FocusedWindowMain::Main => (&mut app.select_handler, true),
+            FocusedWindowMain::Search => (&mut app.select_handler, true),
+        },
+        _ => (&mut app.select_handler, false),
     };
     let selected_index = select_handler.state().selected();
-    let is_focused = !matches!(app.focused_window, FocusedWindow::Queue);
     let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };
     let media_select_block = Block::default()
         .title(block_title)
@@ -122,8 +124,15 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
 
 fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
     let selected_queue_index = app.queue_select_handler.state().selected();
-    let is_queue_focused = matches!(app.focused_window, FocusedWindow::Queue);
-    let block_title = "Queue".to_string() + if is_queue_focused { "(*)" } else { "" };
+    let is_focused = match &mut app.current_screen {
+        CurrentScreen::Main(focused_window) => match focused_window {
+            FocusedWindowMain::Queue => true,
+            FocusedWindowMain::Main => false,
+            FocusedWindowMain::Search => false,
+        },
+        _ => false,
+    };
+    let block_title = "Queue".to_string() + if is_focused { "(*)" } else { "" };
     let list = List::default()
         .items(
             app.queue_select_handler
@@ -132,7 +141,7 @@ fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
                 .enumerate()
                 .map(|(index, song)| {
                     if Some(index) == app.player_information.playing_index {
-                        if Some(index) == selected_queue_index && is_queue_focused {
+                        if Some(index) == selected_queue_index && is_focused {
                             ListItem::new(format!("🎶 {}", song.title.clone()))
                                 .style(Style::default().light_green().bg(Color::Yellow))
                         } else {
@@ -140,7 +149,7 @@ fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
                                 .style(Style::default().light_green())
                         }
                     } else {
-                        if Some(index) == selected_queue_index && is_queue_focused {
+                        if Some(index) == selected_queue_index && is_focused {
                             ListItem::new(song.title.clone())
                                 .style(Style::default().bg(Color::Yellow))
                         } else {

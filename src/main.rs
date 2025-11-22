@@ -17,7 +17,6 @@ use crate::{
     filefinder::FileFinder,
     searchhandler::SearchHandler,
     song::Song,
-    ui::FocusedWindow,
     utils::selecthandler::SelectHandler,
 };
 mod events;
@@ -37,7 +36,7 @@ async fn main() -> Result<(), std::io::Error> {
         std::env::var("HOME").unwrap_or(".".to_string())
     };
     let mut app = App::new(path);
-    let res = app.run();
+    let res = app.run().await;
     res
 }
 
@@ -48,12 +47,28 @@ struct App {
     queue_select_handler: SelectHandler<Song>,
     file_finder: FileFinder,
     pub player_information: PlayerInformation,
-    focused_window: FocusedWindow,
+    current_screen: CurrentScreen,
     search_handler: SearchHandler,
+    player_tx: Sender<PlayerReceiveEvent>,
+    event_rx: Receiver<ApplicationEvent>,
+}
+
+pub enum CurrentScreen {
+    Main(FocusedWindowMain),
+    SearchMain,
+}
+
+pub enum FocusedWindowMain {
+    Main,
+    Queue,
+    Search,
 }
 
 impl App {
     fn new(path: String) -> Self {
+        let (player_tx, player_rx) = channel::<PlayerReceiveEvent>();
+        let (event_tx, event_rx) = channel::<ApplicationEvent>();
+        App::create_threads(event_tx, player_rx);
         App {
             exit: false,
             upcoming_media_shown: true,
@@ -65,19 +80,16 @@ impl App {
                 Some(2),
             ),
             player_information: PlayerInformation::default(),
-            focused_window: FocusedWindow::Main,
+            current_screen: CurrentScreen::Main(FocusedWindowMain::Main),
             search_handler: SearchHandler::new(),
+            player_tx,
+            event_rx,
         }
     }
 
-    fn run(&mut self) -> Result<(), std::io::Error> {
+    async fn run(&mut self) -> Result<(), std::io::Error> {
         let mut terminal = ratatui::init();
 
-        let (event_tx, event_rx) = channel::<ApplicationEvent>();
-
-        let (player_tx, player_rx) = channel::<PlayerReceiveEvent>();
-
-        self.create_threads(&event_tx, player_rx);
         self.file_finder.find_paths(None, None);
         self.select_handler.set_items(
             self.file_finder
@@ -93,35 +105,15 @@ impl App {
             let _ = terminal.draw(|frame| {
                 ui::render(frame, self);
             });
-            if let Ok(event) = event_rx.try_recv() {
+            if let Ok(event) = self.event_rx.try_recv() {
                 match event {
                     ApplicationEvent::Action(action) => match action {
                         Action::Quit => self.exit = true,
-                        Action::SwitchWindow => {
-                            self.focused_window = match self.focused_window {
-                                FocusedWindow::Main => FocusedWindow::Queue,
-                                FocusedWindow::Queue => FocusedWindow::Main,
-                                _ => FocusedWindow::Main,
-                            }
-                        }
-                        Action::MoveUp => self.move_cursor_up(),
-                        Action::MoveDown => self.move_cursor_down(),
-                        Action::Select => self.select_at_cursor(&player_tx),
-                        Action::Space => {
-                            player_tx
-                                .send(PlayerReceiveEvent::TogglePause)
-                                .expect("Failed to toggle pause");
-                        }
-                        Action::PreviousSong => {
-                            player_tx
-                                .send(PlayerReceiveEvent::Previous)
-                                .expect("Failed to send previous song to player");
-                        }
-                        Action::NextSong => {
-                            player_tx
-                                .send(PlayerReceiveEvent::Next)
-                                .expect("Failed to send next song to player");
-                        }
+
+                        _ => match &self.current_screen {
+                            CurrentScreen::Main(_) => self.main_screen_events(action).await,
+                            CurrentScreen::SearchMain => {}
+                        },
                     },
                     ApplicationEvent::PlayerEvent(event) => match event {
                         PlayerSendEvent::Play(playing_index) => {
@@ -169,40 +161,92 @@ impl App {
         Ok(())
     }
 
-    fn move_cursor_down(&mut self) {
-        match self.focused_window {
-            FocusedWindow::Queue => self.queue_select_handler.down(),
-            FocusedWindow::Main => self.select_handler.down(),
-            _ => {}
-        }
-    }
-
-    fn move_cursor_up(&mut self) {
-        match self.focused_window {
-            FocusedWindow::Queue => self.queue_select_handler.up(),
-            FocusedWindow::Main => self.select_handler.up(),
-            _ => {}
-        }
-    }
-
-    fn select_at_cursor(&mut self, player_tx: &Sender<PlayerReceiveEvent>) {
-        match self.focused_window {
-            FocusedWindow::Queue => {
-                if let Some(index) = self.queue_select_handler.state().selected() {
-                    player_tx
-                        .send(PlayerReceiveEvent::SetAndPlaySong(index))
-                        .expect("Failed to set song");
-                }
+    async fn main_screen_events(&mut self, action: Action) {
+        let focused_window = match &self.current_screen {
+            CurrentScreen::Main(focused_window) => focused_window,
+            _ => &FocusedWindowMain::Main,
+        };
+        match action {
+            Action::SwitchWindow => {
+                self.current_screen = CurrentScreen::Main(match focused_window {
+                    FocusedWindowMain::Main => FocusedWindowMain::Queue,
+                    FocusedWindowMain::Queue => FocusedWindowMain::Main,
+                    _ => FocusedWindowMain::Main,
+                })
             }
-            FocusedWindow::Main => {
-                if let Some(index) = self.select_handler.state().selected() {
-                    let (queue1, queue2) = self.select_handler.items().split_at(index);
-                    let mut queue2 = queue2.to_vec();
-                    queue2.append(&mut queue1.to_vec());
-                    player_tx
-                        .send(PlayerReceiveEvent::CreateQueueAndPlay(queue2))
-                        .expect("Failed to send song to player");
+            Action::MoveUp => match focused_window {
+                FocusedWindowMain::Queue => self.queue_select_handler.up(),
+                FocusedWindowMain::Main => self.select_handler.up(),
+                _ => {}
+            },
+            Action::MoveDown => match focused_window {
+                FocusedWindowMain::Queue => self.queue_select_handler.down(),
+                FocusedWindowMain::Main => self.select_handler.down(),
+                _ => {}
+            },
+            Action::Select => match focused_window {
+                FocusedWindowMain::Queue => {
+                    if let Some(index) = self.queue_select_handler.state().selected() {
+                        self.player_tx
+                            .send(PlayerReceiveEvent::SetAndPlaySong(index))
+                            .expect("Failed to set song");
+                    }
                 }
+                FocusedWindowMain::Main => {
+                    if let Some(index) = self.select_handler.state().selected() {
+                        let (queue1, queue2) = self.select_handler.items().split_at(index);
+                        let mut queue2 = queue2.to_vec();
+                        queue2.append(&mut queue1.to_vec());
+                        self.player_tx
+                            .send(PlayerReceiveEvent::CreateQueueAndPlay(queue2))
+                            .expect("Failed to send song to player");
+                    }
+                }
+                FocusedWindowMain::Search => {
+                    let _ = self.search_handler.search().await;
+                }
+            },
+            Action::Char(char) => match focused_window {
+                FocusedWindowMain::Search => {
+                    self.search_handler.add_char_to_query(char);
+                }
+                _ => {
+                    if char == 'f' {
+                        self.current_screen = CurrentScreen::Main(FocusedWindowMain::Search);
+                    }
+                }
+            },
+            Action::Backspace => match focused_window {
+                FocusedWindowMain::Search => {
+                    self.search_handler.remove_last_char();
+                }
+                _ => {}
+            },
+            Action::Esc => match focused_window {
+                FocusedWindowMain::Search => {
+                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Main);
+                }
+                _ => {}
+            },
+            Action::Space => match focused_window {
+                FocusedWindowMain::Search => {
+                    self.search_handler.add_char_to_query(' ');
+                }
+                _ => {
+                    self.player_tx
+                        .send(PlayerReceiveEvent::TogglePause)
+                        .expect("Failed to toggle pause");
+                }
+            },
+            Action::PreviousSong => {
+                self.player_tx
+                    .send(PlayerReceiveEvent::Previous)
+                    .expect("Failed to send previous song to player");
+            }
+            Action::NextSong => {
+                self.player_tx
+                    .send(PlayerReceiveEvent::Next)
+                    .expect("Failed to send next song to player");
             }
             _ => {}
         }
@@ -216,11 +260,7 @@ impl App {
         }
     }
 
-    fn create_threads(
-        &self,
-        event_tx: &Sender<ApplicationEvent>,
-        player_rx: Receiver<PlayerReceiveEvent>,
-    ) {
+    fn create_threads(event_tx: Sender<ApplicationEvent>, player_rx: Receiver<PlayerReceiveEvent>) {
         let keyboard_event_tx = event_tx.clone();
         KeyboardHandler::new(keyboard_event_tx);
         let player_event_tx = event_tx.clone();
