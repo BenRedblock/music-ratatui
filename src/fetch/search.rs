@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use musicbrainz_rs::{
     entity::{
         artist::{Artist, ArtistSearchQuery},
@@ -6,6 +8,7 @@ use musicbrainz_rs::{
     prelude::*,
 };
 use reqwest::Error;
+use rusty_ytdl::search::{SearchOptions, SearchResult, YouTube};
 
 use crate::{
     song::{Song, SongType},
@@ -61,9 +64,11 @@ fn create_query(input: &str, max_results: u32) -> String {
     return format!("{}&limit={}", base_string, max_results);
 }
 
-pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, musicbrainz_rs::Error> {
+pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, Box<dyn std::error::Error>> {
     let search_string = create_query(query, 10);
-    let query_result = Recording::search(search_string)
+
+    let youtube = YouTube::new().unwrap();
+    let mut query_result: Vec<Song> = Recording::search(search_string)
         .execute()
         .await?
         .entities
@@ -85,17 +90,30 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, musicbrainz_rs::E
             let title = recording.title.clone();
             let total_time = recording.length.unwrap_or(0) / 1000;
 
-            return Song {
+            Song {
                 album,
                 author: artist,
                 title,
                 total_time,
-                song_type: SongType::Online {
-                    url: "".to_string(),
-                },
-            };
+                song_type: SongType::OnlineWithoutUrl,
+            }
         })
         .collect();
+
+    for song in &mut query_result {
+        let yt_search_result = youtube
+            .search_one(
+                format!("{}", song.title),
+                Some(&SearchOptions {
+                    search_type: rusty_ytdl::search::SearchType::Video,
+                    ..Default::default()
+                }),
+            )
+            .await;
+        if let Ok(Some(SearchResult::Video(video))) = yt_search_result {
+            song.song_type = SongType::Online { url: video.url }
+        }
+    }
 
     Ok(query_result)
 }

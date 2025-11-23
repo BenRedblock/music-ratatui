@@ -5,6 +5,7 @@ pub enum SongType {
     Local { path: String },
     OnlineDownloaded { url: String, path: String },
     Online { url: String },
+    OnlineWithoutUrl,
 }
 
 #[derive(Clone)]

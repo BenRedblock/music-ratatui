@@ -205,6 +205,7 @@ impl App {
                 }
                 FocusedWindowMain::Search => {
                     let _ = self.search_handler.search().await;
+                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Main);
                 }
             },
             Action::Char(char) => match focused_window {

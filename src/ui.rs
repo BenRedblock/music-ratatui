@@ -105,7 +105,7 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
     let list = List::default()
         .items(
-            app.select_handler
+            select_handler
                 .items()
                 .iter()
                 .enumerate()
@@ -119,7 +119,7 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
                 .collect::<Vec<ListItem>>(),
         )
         .block(media_select_block);
-    frame.render_stateful_widget(list, rect, &mut app.select_handler.state());
+    frame.render_stateful_widget(list, rect, &mut select_handler.state());
 }
 
 fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
