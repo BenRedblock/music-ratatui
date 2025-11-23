@@ -7,7 +7,10 @@ use musicbrainz_rs::{
 };
 use reqwest::Error;
 
-use crate::{song::Song, utils::selecthandler::SelectHandlerItem};
+use crate::{
+    song::{Song, SongType},
+    utils::selecthandler::SelectHandlerItem,
+};
 
 pub async fn fetch_artists_manual() -> Result<(), Error> {
     let client = reqwest::Client::new();
@@ -87,7 +90,9 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, musicbrainz_rs::E
                 author: artist,
                 title,
                 total_time,
-                file_path: String::new(),
+                song_type: SongType::Online {
+                    url: "".to_string(),
+                },
             };
         })
         .collect();

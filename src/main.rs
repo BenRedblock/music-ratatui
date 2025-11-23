@@ -19,6 +19,7 @@ use crate::{
     song::Song,
     utils::selecthandler::SelectHandler,
 };
+mod config;
 mod events;
 mod fetch;
 mod filefinder;

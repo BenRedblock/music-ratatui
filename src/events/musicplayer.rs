@@ -9,7 +9,10 @@ use souvlaki::{
 };
 use vlc::{Event, EventType, Instance, Media, MediaPlayer, MediaPlayerAudioEx, State};
 
-use crate::{events::ApplicationEvent, song::Song};
+use crate::{
+    events::ApplicationEvent,
+    song::{Song, SongType},
+};
 
 #[derive(Default)]
 pub enum PlayerStatus {
@@ -322,17 +325,21 @@ impl Player {
 
     fn set_song(&mut self, index: usize) {
         if let Some(song) = self.queue.get(index) {
-            let media = Media::new_path(&self.vlc_instance, &song.file_path).unwrap();
-            self.playing_index = Some(index);
-            self.media_player.set_media(&media);
-            self.media_controls
-                .set_metadata(MediaMetadata {
-                    title: Some(&song.title),
-                    artist: Some("Slowdive"),
-                    album: Some("Souvlaki"),
-                    ..Default::default()
-                })
-                .unwrap();
+            if let SongType::Local { path } | SongType::OnlineDownloaded { path, .. } =
+                &song.song_type
+            {
+                let media = Media::new_path(&self.vlc_instance, path).unwrap();
+                self.playing_index = Some(index);
+                self.media_player.set_media(&media);
+                self.media_controls
+                    .set_metadata(MediaMetadata {
+                        title: Some(&song.title),
+                        artist: song.author.as_deref(),
+                        album: song.album.as_deref(),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            }
         }
     }
 

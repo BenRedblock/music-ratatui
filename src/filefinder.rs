@@ -1,13 +1,9 @@
-use std::{
-    fs::{DirBuilder, DirEntry, File, FileType, ReadDir, metadata, read_dir},
-    path::{Path, PathBuf},
-    vec,
-};
+use std::{fs::read_dir, path::PathBuf};
 
 use id3::{Tag, TagLike};
 use vlc::{Instance, Media};
 
-use crate::song::Song;
+use crate::song::{Song, SongType};
 
 pub struct FileFinder {
     extensions: [String; 3],
@@ -77,7 +73,9 @@ impl FileFinder {
                     title: tag.title().unwrap_or("Not defiended").to_string(),
                     total_time: media.duration().unwrap_or(5) as u32,
                     album: tag.album().map(|s| s.to_string()),
-                    file_path: path.to_string_lossy().to_string(),
+                    song_type: SongType::Local {
+                        path: path.to_string_lossy().to_string(),
+                    },
                 };
                 vector.push(song);
             }
