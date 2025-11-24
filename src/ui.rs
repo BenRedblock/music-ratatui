@@ -89,13 +89,24 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
             ..symbols::border::PLAIN
         },
     };
+
     let (select_handler, is_focused) = match &mut app.current_screen {
         CurrentScreen::Main(focused_window) => match focused_window {
-            FocusedWindowMain::Queue => (&mut app.queue_select_handler, false),
-            FocusedWindowMain::Main => (&mut app.select_handler, true),
-            FocusedWindowMain::Search => (&mut app.select_handler, true),
+            FocusedWindowMain::Queue => (
+                &mut app.search_handler.select_handler.lock().unwrap(),
+                false,
+            ),
+            FocusedWindowMain::Main => {
+                (&mut app.search_handler.select_handler.lock().unwrap(), true)
+            }
+            FocusedWindowMain::Search => {
+                (&mut app.search_handler.select_handler.lock().unwrap(), true)
+            }
         },
-        _ => (&mut app.select_handler, false),
+        _ => (
+            &mut app.search_handler.select_handler.lock().unwrap(),
+            false,
+        ),
     };
     let selected_index = select_handler.state().selected();
     let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };

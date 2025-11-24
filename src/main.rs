@@ -1,11 +1,3 @@
-use std::{
-    env,
-    path::Path,
-    sync::mpsc::{self, Receiver, Sender, channel},
-    thread,
-    time::Duration,
-};
-
 use crate::{
     events::{
         ApplicationEvent,
@@ -18,6 +10,13 @@ use crate::{
     searchhandler::SearchHandler,
     song::Song,
     utils::selecthandler::SelectHandler,
+};
+use std::{
+    env,
+    path::Path,
+    sync::mpsc::{Receiver, Sender, channel},
+    thread,
+    time::Duration,
 };
 mod config;
 mod events;
@@ -52,6 +51,7 @@ struct App {
     search_handler: SearchHandler,
     player_tx: Sender<PlayerReceiveEvent>,
     event_rx: Receiver<ApplicationEvent>,
+    search_loading: bool,
 }
 
 pub enum CurrentScreen {
@@ -69,7 +69,7 @@ impl App {
     fn new(path: String) -> Self {
         let (player_tx, player_rx) = channel::<PlayerReceiveEvent>();
         let (event_tx, event_rx) = channel::<ApplicationEvent>();
-        App::create_threads(event_tx, player_rx);
+        App::create_threads(event_tx.clone(), player_rx);
         App {
             exit: false,
             upcoming_media_shown: true,
@@ -82,9 +82,10 @@ impl App {
             ),
             player_information: PlayerInformation::default(),
             current_screen: CurrentScreen::Main(FocusedWindowMain::Main),
-            search_handler: SearchHandler::new(),
+            search_handler: SearchHandler::new(event_tx.clone()),
             player_tx,
             event_rx,
+            search_loading: false,
         }
     }
 
@@ -204,7 +205,7 @@ impl App {
                     }
                 }
                 FocusedWindowMain::Search => {
-                    let _ = self.search_handler.search().await;
+                    let _ = self.search_handler.search();
                     self.current_screen = CurrentScreen::Main(FocusedWindowMain::Main);
                 }
             },
