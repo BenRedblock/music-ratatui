@@ -1,30 +1,42 @@
-use std::{fs::read_dir, path::PathBuf};
+use std::{fs::read_dir, path::PathBuf, str::FromStr};
 
 use id3::{Tag, TagLike};
 use vlc::{Instance, Media};
 
-use crate::song::{Song, SongType};
+use crate::{
+    display_handlers::folder_handler::Folder,
+    song::{Song, SongType},
+};
 
 pub struct FileFinder {
     extensions: [String; 3],
-    search_path: String,
+    search_path: PathBuf,
     depth: u32,
     found_paths: Vec<PathBuf>,
     songs: Vec<Song>,
+    pub folder: Folder,
 }
 
 impl FileFinder {
     pub fn new(extensions: [String; 3], search_path: String, depth: Option<u32>) -> Self {
+        let search_path = PathBuf::from(search_path);
+        let root_name = search_path
+            .file_name()
+            .expect("search_path should be valid")
+            .to_string_lossy()
+            .to_string();
         FileFinder {
             extensions,
             found_paths: Vec::new(),
-            search_path: search_path,
+            search_path: search_path.clone(),
             depth: depth.unwrap_or(3),
             songs: Vec::new(),
+            folder: Folder::new(root_name, search_path),
         }
     }
 
-    pub fn find_paths(&mut self, path: Option<&String>, depth: Option<u32>) {
+    pub fn find_paths(&mut self, path: Option<&PathBuf>, depth: Option<u32>) {
+        let vlc_instance = Instance::new().unwrap();
         let path = if let Some(path) = path {
             path
         } else {
@@ -47,12 +59,29 @@ impl FileFinder {
                                     .unwrap_or_else(|_| "".to_string())
                                     .ends_with(extension)
                                 {
+                                    let song =
+                                        FileFinder::create_song(&vlc_instance, &entry.path());
+                                    if let Some(song) = song {
+                                        self.folder.add_child_at_path(
+                                            crate::display_handlers::folder_handler::Node::Song(
+                                                song.clone(),
+                                            ),
+                                            entry.path().clone(),
+                                        );
+                                        self.songs.push(song);
+                                    }
                                     self.found_paths.push(entry.path());
                                 }
                             }
                         } else if file_type.is_dir() {
-                            let path = entry.path().to_string_lossy().to_string();
-                            if depth > 0 && !entry.file_name().to_string_lossy().starts_with(".") {
+                            let path = entry.path();
+                            let file_name = entry.file_name().to_string_lossy().to_string();
+                            if depth > 0 && !file_name.starts_with(".") {
+                                let folder = Folder::new(file_name, path.clone());
+                                self.folder.add_child_at_path(
+                                    crate::display_handlers::folder_handler::Node::Folder(folder),
+                                    path.clone(),
+                                );
                                 self.find_paths(Some(&path), Some(depth - 1));
                             }
                         }
@@ -60,6 +89,23 @@ impl FileFinder {
                 }
             }
         }
+    }
+    pub fn create_song(vlc_instance: &Instance, path: &PathBuf) -> Option<Song> {
+        if let Ok(tag) = Tag::read_from_path(path) {
+            let media = Media::new_path(vlc_instance, path).expect("Media should be created");
+            media.parse();
+            let song = Song {
+                artist: tag.artist().map(|s| s.to_string()),
+                title: tag.title().unwrap_or("Not defiended").to_string(),
+                total_time: media.duration().unwrap_or(5) as u32,
+                album: tag.album().map(|s| s.to_string()),
+                song_type: SongType::Local {
+                    path: path.to_string_lossy().to_string(),
+                },
+            };
+            return Some(song);
+        }
+        return None;
     }
     pub fn create_songs(&mut self) -> Result<&Vec<Song>, id3::Error> {
         let mut vector = Vec::new();
@@ -69,7 +115,7 @@ impl FileFinder {
                 let media = Media::new_path(&vlc_instance, path).unwrap();
                 media.parse();
                 let song = Song {
-                    author: tag.artist().map(|s| s.to_string()),
+                    artist: tag.artist().map(|s| s.to_string()),
                     title: tag.title().unwrap_or("Not defiended").to_string(),
                     total_time: media.duration().unwrap_or(5) as u32,
                     album: tag.album().map(|s| s.to_string()),

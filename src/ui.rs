@@ -8,12 +8,9 @@ use ratatui::{
 };
 
 use crate::{
-    App, CurrentScreen, FocusedWindowMain,
+    App, CurrentScreen, FocusedWindowMain, MediaDisplayType, display_handlers,
     events::{format_ms_to_duration_string, musicplayer::PlayerStatus},
-    utils::{
-        input::InputMode,
-        selecthandler::{SelectHandler, SelectHandlerItem},
-    },
+    utils::selecthandler::{SelectHandler, SelectHandlerItem, Selectable},
 };
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
@@ -53,7 +50,7 @@ fn create_upper_rect(app: &mut App, frame: &mut Frame, rect: Rect) {
     render_search(app, frame, search_rect);
     let bottom_rect = layout[1];
 
-    if app.upcoming_media_shown {
+    if app.queue_shown {
         let layout = ratatui::layout::Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Fill(1), Constraint::Length(30)])
@@ -79,7 +76,7 @@ fn render_search(app: &mut App, frame: &mut Frame, rect: Rect) {
 }
 
 fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
-    let border_set = match app.upcoming_media_shown {
+    let border_set = match app.queue_shown {
         true => symbols::border::Set {
             top_right: symbols::line::NORMAL.horizontal_down,
 
@@ -90,41 +87,36 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
         },
     };
 
-    let (select_handler, is_focused) = match &mut app.current_screen {
-        CurrentScreen::Main(focused_window) => match focused_window {
-            FocusedWindowMain::Queue => (
-                &mut app.search_handler.select_handler.lock().unwrap(),
-                false,
-            ),
-            FocusedWindowMain::Main => {
-                (&mut app.search_handler.select_handler.lock().unwrap(), true)
-            }
-            FocusedWindowMain::Search => {
-                (&mut app.search_handler.select_handler.lock().unwrap(), true)
-            }
-        },
-        _ => (
-            &mut app.search_handler.select_handler.lock().unwrap(),
-            false,
-        ),
-    };
+    let (select_handler, is_focused): (&mut SelectHandler<SelectHandlerItem>, bool) =
+        match &mut app.current_screen {
+            CurrentScreen::Main(focused_window) => match focused_window {
+                FocusedWindowMain::Queue => (&mut app.queue_select_handler, false),
+                FocusedWindowMain::Media(display_type) => match display_type {
+                    MediaDisplayType::Songs => (&mut app.select_handler, true),
+                    MediaDisplayType::Folder => (&mut app.folder_handler.select_handler, true),
+                },
+                FocusedWindowMain::Search => (&mut app.select_handler, true),
+            },
+        };
+
     let selected_index = select_handler.state().selected();
     let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };
     let media_select_block = Block::default()
         .title(block_title)
         .border_set(border_set)
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
+
     let list = List::default()
         .items(
             select_handler
                 .items()
                 .iter()
                 .enumerate()
-                .map(|(index, song)| {
+                .map(|(index, item)| {
                     if Some(index) == selected_index && is_focused {
-                        ListItem::new(song.title.clone()).style(Style::default().bg(Color::Yellow))
+                        item.list_item.style(Style::default().bg(Color::Yellow))
                     } else {
-                        ListItem::new(song.title.clone()).style(Style::default())
+                        item.list_item.style(Style::default())
                     }
                 })
                 .collect::<Vec<ListItem>>(),
@@ -138,10 +130,9 @@ fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
     let is_focused = match &mut app.current_screen {
         CurrentScreen::Main(focused_window) => match focused_window {
             FocusedWindowMain::Queue => true,
-            FocusedWindowMain::Main => false,
+            FocusedWindowMain::Media(_) => false,
             FocusedWindowMain::Search => false,
         },
-        _ => false,
     };
     let block_title = "Queue".to_string() + if is_focused { "(*)" } else { "" };
     let list = List::default()
@@ -191,7 +182,7 @@ fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
         paragraph = Paragraph::new(format!(
             "{}\n{}\nPlaying",
             song.title,
-            song.author.unwrap_or("".to_string())
+            song.artist.unwrap_or("".to_string())
         ))
     }
     if let PlayerStatus::Paused(song) = &app.player_information.status {
@@ -199,7 +190,7 @@ fn render_media_info(app: &App, frame: &mut Frame, rect: Rect) {
         paragraph = Paragraph::new(format!(
             "{}\n{}\nPaused",
             song.title,
-            song.author.unwrap_or("".to_string())
+            song.artist.unwrap_or("".to_string())
         ))
     }
     let paragraph = paragraph.block(

@@ -1,3 +1,5 @@
+use ratatui::widgets::ListItem;
+
 use crate::utils::selecthandler::SelectHandlerItem;
 
 #[derive(Clone)]
@@ -11,7 +13,7 @@ pub enum SongType {
 #[derive(Clone)]
 pub struct Song {
     pub title: String,
-    pub author: Option<String>,
+    pub artist: Option<String>,
     pub album: Option<String>,
     pub total_time: u32,
     pub song_type: SongType,
@@ -30,9 +32,8 @@ impl Song {
         matches!(self.song_type, SongType::OnlineDownloaded { .. })
     }
 }
-
 impl SelectHandlerItem for Song {
-    fn title(&self) -> String {
-        self.title.clone()
+    fn list_item(&self) -> ListItem {
+        ListItem::new(format!("🎵 {} ({})", self.title.clone(), self.total_time))
     }
 }

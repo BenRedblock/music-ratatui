@@ -334,7 +334,7 @@ impl Player {
                 self.media_controls
                     .set_metadata(MediaMetadata {
                         title: Some(&song.title),
-                        artist: song.author.as_deref(),
+                        artist: song.artist.as_deref(),
                         album: song.album.as_deref(),
                         ..Default::default()
                     })

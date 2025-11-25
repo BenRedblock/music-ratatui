@@ -1,4 +1,5 @@
 use crate::{
+    display_handlers::folder_handler::{Folder, FolderHandler},
     events::{
         ApplicationEvent,
         keyboard::{Action, KeyboardHandler},
@@ -12,6 +13,7 @@ use crate::{
     utils::selecthandler::SelectHandler,
 };
 use std::{
+    collections::HashMap,
     env,
     path::Path,
     sync::mpsc::{Receiver, Sender, channel},
@@ -19,11 +21,13 @@ use std::{
     time::Duration,
 };
 mod config;
+mod display_handlers;
 mod events;
 mod fetch;
 mod filefinder;
 mod searchhandler;
 mod song;
+mod songs;
 mod ui;
 mod utils;
 
@@ -40,9 +44,26 @@ async fn main() -> Result<(), std::io::Error> {
     res
 }
 
+pub enum CurrentScreen {
+    Main(FocusedWindowMain),
+}
+
+pub enum FocusedWindowMain {
+    Media(MediaDisplayType),
+    Queue,
+    Search,
+}
+
+pub enum MediaDisplayType {
+    Songs,
+    Folder,
+}
+
 struct App {
     exit: bool,
-    upcoming_media_shown: bool,
+    songs: HashMap<String, Song>,
+    queue_shown: bool,
+    folder_handler: FolderHandler,
     select_handler: SelectHandler<Song>,
     queue_select_handler: SelectHandler<Song>,
     file_finder: FileFinder,
@@ -51,18 +72,6 @@ struct App {
     search_handler: SearchHandler,
     player_tx: Sender<PlayerReceiveEvent>,
     event_rx: Receiver<ApplicationEvent>,
-    search_loading: bool,
-}
-
-pub enum CurrentScreen {
-    Main(FocusedWindowMain),
-    SearchMain,
-}
-
-pub enum FocusedWindowMain {
-    Main,
-    Queue,
-    Search,
 }
 
 impl App {
@@ -70,36 +79,50 @@ impl App {
         let (player_tx, player_rx) = channel::<PlayerReceiveEvent>();
         let (event_tx, event_rx) = channel::<ApplicationEvent>();
         App::create_threads(event_tx.clone(), player_rx);
+
+        let mut file_finder = FileFinder::new(
+            [".mp3".to_string(), ".ogg".to_string(), ".wav".to_string()],
+            path,
+            Some(2),
+        );
+
+        file_finder.find_paths(None, None);
+        let folder_handler = FolderHandler::new(file_finder.folder.clone());
+
         App {
             exit: false,
-            upcoming_media_shown: true,
+            songs: HashMap::new(),
+            queue_shown: true,
+            folder_handler: folder_handler,
             select_handler: SelectHandler::new(),
             queue_select_handler: SelectHandler::new(),
-            file_finder: FileFinder::new(
-                [".mp3".to_string(), ".ogg".to_string(), ".wav".to_string()],
-                path,
-                Some(2),
-            ),
+            file_finder: file_finder,
             player_information: PlayerInformation::default(),
-            current_screen: CurrentScreen::Main(FocusedWindowMain::Main),
-            search_handler: SearchHandler::new(event_tx.clone()),
+            current_screen: CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Folder)),
+            search_handler: SearchHandler::new(),
             player_tx,
             event_rx,
-            search_loading: false,
         }
     }
 
     async fn run(&mut self) -> Result<(), std::io::Error> {
         let mut terminal = ratatui::init();
 
-        self.file_finder.find_paths(None, None);
-        self.select_handler.set_items(
-            self.file_finder
-                .create_songs()
-                .unwrap_or(&Vec::new())
-                .clone(),
-        );
-
+        self.file_finder.create_songs().iter().map(|songs| {
+            songs.iter().for_each(|song| {
+                self.songs.insert(
+                    format!(
+                        "{}-{}",
+                        song.title.clone(),
+                        song.artist.clone().unwrap_or("".to_string())
+                    ),
+                    song.clone(),
+                );
+            })
+        });
+        let _ = terminal.draw(|frame| {
+            ui::render(frame, self);
+        });
         loop {
             if self.exit {
                 break;
@@ -114,7 +137,6 @@ impl App {
 
                         _ => match &self.current_screen {
                             CurrentScreen::Main(_) => self.main_screen_events(action).await,
-                            CurrentScreen::SearchMain => {}
                         },
                     },
                     ApplicationEvent::PlayerEvent(event) => match event {
@@ -166,24 +188,29 @@ impl App {
     async fn main_screen_events(&mut self, action: Action) {
         let focused_window = match &self.current_screen {
             CurrentScreen::Main(focused_window) => focused_window,
-            _ => &FocusedWindowMain::Main,
         };
         match action {
             Action::SwitchWindow => {
                 self.current_screen = CurrentScreen::Main(match focused_window {
-                    FocusedWindowMain::Main => FocusedWindowMain::Queue,
-                    FocusedWindowMain::Queue => FocusedWindowMain::Main,
-                    _ => FocusedWindowMain::Main,
+                    FocusedWindowMain::Media(_) => FocusedWindowMain::Queue,
+                    FocusedWindowMain::Queue => FocusedWindowMain::Media(MediaDisplayType::Folder),
+                    _ => FocusedWindowMain::Media(MediaDisplayType::Folder),
                 })
             }
             Action::MoveUp => match focused_window {
                 FocusedWindowMain::Queue => self.queue_select_handler.up(),
-                FocusedWindowMain::Main => self.select_handler.up(),
+                FocusedWindowMain::Media(display_type) => match display_type {
+                    MediaDisplayType::Folder => self.select_handler.up(),
+                    MediaDisplayType::Songs => self.select_handler.up(),
+                },
                 _ => {}
             },
             Action::MoveDown => match focused_window {
                 FocusedWindowMain::Queue => self.queue_select_handler.down(),
-                FocusedWindowMain::Main => self.select_handler.down(),
+                FocusedWindowMain::Media(display_type) => match display_type {
+                    MediaDisplayType::Folder => self.select_handler.down(),
+                    MediaDisplayType::Songs => self.select_handler.down(),
+                },
                 _ => {}
             },
             Action::Select => match focused_window {
@@ -194,19 +221,23 @@ impl App {
                             .expect("Failed to set song");
                     }
                 }
-                FocusedWindowMain::Main => {
-                    if let Some(index) = self.select_handler.state().selected() {
-                        let (queue1, queue2) = self.select_handler.items().split_at(index);
-                        let mut queue2 = queue2.to_vec();
-                        queue2.append(&mut queue1.to_vec());
-                        self.player_tx
-                            .send(PlayerReceiveEvent::CreateQueueAndPlay(queue2))
-                            .expect("Failed to send song to player");
+                FocusedWindowMain::Media(display_type) => match display_type {
+                    MediaDisplayType::Songs => {
+                        if let Some(index) = self.select_handler.state().selected() {
+                            let (queue1, queue2) = self.select_handler.items().split_at(index);
+                            let mut queue2 = queue2.to_vec();
+                            queue2.append(&mut queue1.to_vec());
+                            self.player_tx
+                                .send(PlayerReceiveEvent::CreateQueueAndPlay(queue2))
+                                .expect("Failed to send song to player");
+                        }
                     }
-                }
+                    MediaDisplayType::Folder => {}
+                },
                 FocusedWindowMain::Search => {
                     let _ = self.search_handler.search();
-                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Main);
+                    self.current_screen =
+                        CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Folder));
                 }
             },
             Action::Char(char) => match focused_window {
@@ -227,7 +258,8 @@ impl App {
             },
             Action::Esc => match focused_window {
                 FocusedWindowMain::Search => {
-                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Main);
+                    self.current_screen =
+                        CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Songs));
                 }
                 _ => {}
             },

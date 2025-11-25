@@ -1,7 +1,22 @@
-use ratatui::widgets::ListState;
+use ratatui::widgets::{ListItem, ListState};
 
+use crate::{display_handlers::folder_handler::Folder, song::Song};
+
+pub enum Selectable {
+    Song(Song),
+    Folder(Folder),
+}
+
+impl SelectHandlerItem for Selectable {
+    fn list_item(&self) -> ListItem {
+        match self {
+            Selectable::Song(song) => song.list_item(),
+            Selectable::Folder(folder) => folder.list_item(),
+        }
+    }
+}
 pub trait SelectHandlerItem {
-    fn title(&self) -> String;
+    fn list_item(&self) -> ListItem;
 }
 
 pub struct SelectHandler<T: SelectHandlerItem> {

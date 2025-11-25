@@ -10,10 +10,7 @@ use musicbrainz_rs::{
 use reqwest::Error;
 use rusty_ytdl::search::{SearchOptions, SearchResult, YouTube};
 
-use crate::{
-    song::{Song, SongType},
-    utils::selecthandler::SelectHandlerItem,
-};
+use crate::song::{Song, SongType};
 
 pub async fn fetch_artists_manual() -> Result<(), Error> {
     let client = reqwest::Client::new();
@@ -92,7 +89,7 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, Box<dyn std::erro
 
             Song {
                 album,
-                author: artist,
+                artist,
                 title,
                 total_time,
                 song_type: SongType::OnlineWithoutUrl,
@@ -116,10 +113,4 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, Box<dyn std::erro
     }
 
     Ok(query_result)
-}
-
-impl SelectHandlerItem for Recording {
-    fn title(&self) -> String {
-        self.title.clone()
-    }
 }

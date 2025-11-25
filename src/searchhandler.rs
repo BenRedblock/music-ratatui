@@ -11,16 +11,14 @@ use crate::{
 pub struct SearchHandler {
     query: String,
     pub select_handler: Arc<Mutex<SelectHandler<Song>>>,
-    event_tx: Sender<ApplicationEvent>,
     running_search: Option<JoinHandle<()>>,
 }
 
 impl SearchHandler {
-    pub fn new(event_tx: Sender<ApplicationEvent>) -> Self {
+    pub fn new() -> Self {
         SearchHandler {
             query: "".to_string(),
             select_handler: Arc::new(Mutex::new(SelectHandler::new())),
-            event_tx,
             running_search: None,
         }
     }
