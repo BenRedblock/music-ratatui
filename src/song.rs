@@ -35,7 +35,7 @@ impl Song {
     }
 }
 impl SelectHandlerItem for Song {
-    fn list_item(&self) -> ListItem {
+    fn list_item(&self) -> ListItem<'_> {
         ListItem::new(format!("🎵 {} ({})", self.title.clone(), self.total_time))
     }
 }

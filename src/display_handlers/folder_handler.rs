@@ -15,7 +15,7 @@ pub enum Node {
 }
 
 impl SelectHandlerItem for Node {
-    fn list_item(&self) -> ListItem {
+    fn list_item(&self) -> ListItem<'_> {
         match self {
             Node::Folder(folder) => folder.list_item(),
             Node::Song(song) => song.list_item(),
@@ -91,7 +91,7 @@ impl Folder {
     }
 }
 impl SelectHandlerItem for Folder {
-    fn list_item(&self) -> ListItem {
+    fn list_item(&self) -> ListItem<'_> {
         ListItem::new(format!(
             "📁 {} ({})",
             self.name.clone(),

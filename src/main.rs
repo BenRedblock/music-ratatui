@@ -108,7 +108,7 @@ impl App {
             file_finder: file_finder,
             player_information: PlayerInformation::default(),
             current_screen: CurrentScreen::Main(FocusedWindowMain::Media),
-            selected_media_display_type: MediaDisplayType::Songs,
+            selected_media_display_type: MediaDisplayType::Folders,
             search_handler: SearchHandler::new(),
             player_tx,
             event_rx,

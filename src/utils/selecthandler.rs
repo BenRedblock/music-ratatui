@@ -9,7 +9,7 @@ pub trait SelectHandlerItem
 where
     Self: Clone,
 {
-    fn list_item(&self) -> ListItem;
+    fn list_item(&self) -> ListItem<'_>;
 }
 
 #[derive(Clone)]
@@ -19,7 +19,7 @@ pub enum Selectable {
 }
 
 impl SelectHandlerItem for Selectable {
-    fn list_item(&self) -> ListItem {
+    fn list_item(&self) -> ListItem<'_> {
         match self {
             Selectable::Song(song) => song.list_item(),
             Selectable::Node(node) => node.list_item(),
