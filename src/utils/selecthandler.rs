@@ -1,22 +1,30 @@
 use ratatui::widgets::{ListItem, ListState};
 
-use crate::{display_handlers::folder_handler::Folder, song::Song};
+use crate::{
+    display_handlers::folder_handler::{Folder, Node},
+    song::Song,
+};
 
+pub trait SelectHandlerItem
+where
+    Self: Clone,
+{
+    fn list_item(&self) -> ListItem;
+}
+
+#[derive(Clone)]
 pub enum Selectable {
     Song(Song),
-    Folder(Folder),
+    Node(Node),
 }
 
 impl SelectHandlerItem for Selectable {
     fn list_item(&self) -> ListItem {
         match self {
             Selectable::Song(song) => song.list_item(),
-            Selectable::Folder(folder) => folder.list_item(),
+            Selectable::Node(node) => node.list_item(),
         }
     }
-}
-pub trait SelectHandlerItem {
-    fn list_item(&self) -> ListItem;
 }
 
 pub struct SelectHandler<T: SelectHandlerItem> {
@@ -34,7 +42,11 @@ impl<T: SelectHandlerItem> SelectHandler<T> {
 
     pub fn set_items(&mut self, items: Vec<T>) {
         self.items = items;
-        self.state.select(Some(0));
+        if !self.items.is_empty() {
+            self.state.select(Some(0));
+        } else {
+            self.state.select(None);
+        }
     }
 
     pub fn down(&mut self) {
@@ -46,10 +58,7 @@ impl<T: SelectHandlerItem> SelectHandler<T> {
     }
 
     pub fn select(&self) -> Option<&T> {
-        if let Some(index) = self.state.selected() {
-            return Some(&self.items[index]);
-        }
-        return None;
+        self.state.selected().map(|i| &self.items[i])
     }
 
     // Getters:
@@ -59,5 +68,14 @@ impl<T: SelectHandlerItem> SelectHandler<T> {
 
     pub fn state(&mut self) -> &mut ListState {
         &mut self.state
+    }
+
+    pub fn select_handler_state_and_items(&mut self) -> (&mut ListState, Vec<T>) {
+        let list_items: Vec<T>;
+        {
+            let items = self.items();
+            list_items = items.clone();
+        }
+        (self.state(), list_items)
     }
 }

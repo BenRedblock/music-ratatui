@@ -8,10 +8,11 @@ use ratatui::{
 };
 
 use crate::{
-    App, CurrentScreen, FocusedWindowMain, MediaDisplayType, display_handlers,
+    App, CurrentScreen, FocusedWindowMain, MediaDisplayType,
     events::{format_ms_to_duration_string, musicplayer::PlayerStatus},
-    utils::selecthandler::{SelectHandler, SelectHandlerItem, Selectable},
+    utils::selecthandler::{SelectHandlerItem, Selectable},
 };
+
 pub fn render(frame: &mut Frame, app: &mut App) {
     let layout = ratatui::layout::Layout::default()
         .direction(Direction::Vertical)
@@ -69,7 +70,6 @@ fn render_search(app: &mut App, frame: &mut Frame, rect: Rect) {
                 FocusedWindowMain::Search => Style::default().fg(Color::Yellow),
                 _ => Style::default(),
             },
-            _ => Style::default(),
         })
         .block(Block::bordered().title("Input"));
     frame.render_widget(input, rect);
@@ -87,42 +87,69 @@ fn render_media_selection(app: &mut App, frame: &mut Frame, rect: Rect) {
         },
     };
 
-    let (select_handler, is_focused): (&mut SelectHandler<SelectHandlerItem>, bool) =
-        match &mut app.current_screen {
-            CurrentScreen::Main(focused_window) => match focused_window {
-                FocusedWindowMain::Queue => (&mut app.queue_select_handler, false),
-                FocusedWindowMain::Media(display_type) => match display_type {
-                    MediaDisplayType::Songs => (&mut app.select_handler, true),
-                    MediaDisplayType::Folder => (&mut app.folder_handler.select_handler, true),
-                },
-                FocusedWindowMain::Search => (&mut app.select_handler, true),
-            },
-        };
+    let list_state_ref: &mut ListState;
+    let raw_selectable_items: Vec<Selectable>;
+    let block_title_str: &str;
 
-    let selected_index = select_handler.state().selected();
-    let block_title = "Media".to_string() + if is_focused { "(*)" } else { "" };
+    match app.selected_media_display_type {
+        MediaDisplayType::Songs => {
+            let (state, items) = app.select_handler.select_handler_state_and_items();
+            list_state_ref = state;
+            raw_selectable_items = items
+                .iter()
+                .map(|item| Selectable::Song(item.clone()))
+                .collect();
+            block_title_str = "[Songs] | Folder";
+        }
+        MediaDisplayType::Folders => {
+            let (state, items) = app
+                .folder_handler
+                .select_handler
+                .select_handler_state_and_items();
+            list_state_ref = state;
+            raw_selectable_items = items
+                .iter()
+                .map(|item| Selectable::Node(item.clone()))
+                .collect();
+            block_title_str = "Songs | [Folder]";
+        }
+    };
+
+    let list_items: Vec<ListItem> = raw_selectable_items
+        .iter()
+        .map(|item| item.list_item())
+        .collect();
+
+    let is_focused = match &app.current_screen {
+        CurrentScreen::Main(focused_window) => match focused_window {
+            FocusedWindowMain::Media => true,
+            _ => false,
+        },
+    };
+
+    let block_title = block_title_str.to_string() + if is_focused { "(*)" } else { "" };
     let media_select_block = Block::default()
         .title(block_title)
         .border_set(border_set)
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT);
-
+    let selected_index = list_state_ref.selected();
     let list = List::default()
         .items(
-            select_handler
-                .items()
+            list_items
                 .iter()
                 .enumerate()
                 .map(|(index, item)| {
                     if Some(index) == selected_index && is_focused {
-                        item.list_item.style(Style::default().bg(Color::Yellow))
+                        item.clone().style(Style::default().bg(Color::Yellow))
                     } else {
-                        item.list_item.style(Style::default())
+                        item.clone().style(Style::default())
                     }
                 })
                 .collect::<Vec<ListItem>>(),
         )
         .block(media_select_block);
-    frame.render_stateful_widget(list, rect, &mut select_handler.state());
+
+    frame.render_stateful_widget(list, rect, list_state_ref);
 }
 
 fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
@@ -130,7 +157,7 @@ fn render_queue(app: &mut App, frame: &mut Frame, rect: Rect) {
     let is_focused = match &mut app.current_screen {
         CurrentScreen::Main(focused_window) => match focused_window {
             FocusedWindowMain::Queue => true,
-            FocusedWindowMain::Media(_) => false,
+            FocusedWindowMain::Media => false,
             FocusedWindowMain::Search => false,
         },
     };

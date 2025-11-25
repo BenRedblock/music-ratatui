@@ -1,9 +1,10 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
 
-use ratatui::widgets::ListItem;
+use log::info;
+use ratatui::widgets::{ListItem, ListState};
 
 use crate::{
-    song::Song,
+    song::{Song, SongType},
     utils::selecthandler::{SelectHandler, SelectHandlerItem},
 };
 
@@ -44,12 +45,21 @@ impl Folder {
         }
     }
     pub fn add_child_at_path(&mut self, child: Node, path: PathBuf) {
-        if path == self.path {
+        if let Some(parent) = path.parent()
+            && parent == self.path
+        {
             self.add_child(child);
         } else {
             let folder = self.get_folder_at_path_as_mut(path.clone());
             if let Some(folder) = folder {
                 folder.add_child_at_path(child, path);
+            } else {
+                if let Some(name) = path.file_name() {
+                    self.add_child(Node::Folder(Folder::new(
+                        name.to_string_lossy().into_owned(),
+                        path,
+                    )));
+                }
             }
         }
     }
@@ -69,19 +79,15 @@ impl Folder {
     pub fn get_folder_at_path(&self, path: PathBuf) -> Option<&Folder> {
         self.children.iter().find_map(|child| {
             if let Node::Folder(folder) = child {
-                if folder.path == path {
+                if folder.path.eq(&path) {
                     return Some(folder);
                 }
             }
             None
         })
     }
-    pub fn list_item(&self) -> ListItem {
-        ListItem::new(format!(
-            "📁 {} ({})",
-            self.name.clone(),
-            self.children.len()
-        ))
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 impl SelectHandlerItem for Folder {
@@ -102,13 +108,36 @@ pub struct FolderHandler {
 
 impl FolderHandler {
     pub fn new(root_folder: Folder) -> Self {
-        let mut path_stack = Vec::new();
-        path_stack.push(root_folder.path.clone());
-        Self {
+        let path_stack = Vec::new();
+        let mut s = Self {
             path_stack,
             root_folder,
             select_handler: SelectHandler::new(),
+        };
+        s.populate_select_handler();
+        s.visualize_tree();
+        s
+    }
+    pub fn insert_songs(&mut self, songs: Vec<Song>) {
+        let mut map: HashMap<PathBuf, Folder> = HashMap::new();
+        for song in songs {
+            if let SongType::Local { ref path } = song.song_type {
+                let parent_path = path.parent().expect("Should exist").to_path_buf();
+                let parent_name = &parent_path
+                    .file_name()
+                    .expect("Should exist")
+                    .to_string_lossy()
+                    .to_string();
+                let folder = map
+                    .entry(parent_path.clone())
+                    .or_insert(Folder::new(parent_name.to_owned(), parent_path));
+                folder.add_child(Node::Song(song));
+            }
         }
+        for folder in map.values() {
+            self.root_folder.add_child(Node::Folder(folder.clone()));
+        }
+        self.populate_select_handler();
     }
     pub fn current_folder(&self) -> &Folder {
         let mut current_folder = &self.root_folder;
@@ -137,6 +166,9 @@ impl FolderHandler {
     pub fn select_handler_down(&mut self) {
         self.select_handler.down();
     }
+    pub fn select_handler_selected(&self) -> Option<&Node> {
+        self.select_handler.select()
+    }
     pub fn select_handler_select(&mut self) -> Option<Song> {
         match self.select_handler.select() {
             Some(node) => match node {
@@ -155,5 +187,24 @@ impl FolderHandler {
         let current_folder = self.current_folder();
         let children = current_folder.get_children();
         self.select_handler.set_items(children.clone());
+    }
+    pub fn visualize_tree(&self) {
+        info!("{}", self.root_folder.name());
+        self.visualize_node_recursive(&self.root_folder.children, 1);
+    }
+
+    fn visualize_node_recursive(&self, nodes: &Vec<Node>, depth: usize) {
+        for node in nodes {
+            let indent = "  ".repeat(depth);
+            match node {
+                Node::Folder(folder) => {
+                    info!("{}📁 {} ({})", indent, folder.name(), folder.children.len());
+                    self.visualize_node_recursive(&folder.children, depth + 1);
+                }
+                Node::Song(song) => {
+                    info!("{}🎵 {}", indent, song.title);
+                }
+            }
+        }
     }
 }

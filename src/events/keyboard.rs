@@ -24,10 +24,12 @@ pub struct KeyboardHandler {
 
 impl KeyboardHandler {
     pub fn new(event_tx: Sender<ApplicationEvent>) {
-        thread::spawn(move || KeyboardHandler { event_tx }.run());
+        tokio::spawn(async move {
+            KeyboardHandler { event_tx }.run().await;
+        });
     }
 
-    fn run(&self) {
+    async fn run(&self) {
         loop {
             match crossterm::event::read().unwrap() {
                 crossterm::event::Event::Key(key_event) => {

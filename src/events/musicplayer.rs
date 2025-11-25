@@ -248,10 +248,12 @@ impl Player {
     }
 
     fn toggle_pause(&mut self) {
-        if self.media_player.is_playing() {
+        if self.playing_index.is_some() {
             self.pause();
         } else {
-            self.pause();
+            if !self.queue.is_empty() {
+                self.set_and_play_song(0);
+            }
         }
     }
 
@@ -284,7 +286,7 @@ impl Player {
 
     fn add_songs_to_queue(&mut self, songs: Vec<Song>) {
         for song in songs {
-            self.add_song_to_queue(song);
+            self.queue.push(song);
         }
         self.event_tx
             .send(ApplicationEvent::PlayerEvent(PlayerSendEvent::QueueUpdate(

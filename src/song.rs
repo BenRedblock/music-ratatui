@@ -1,11 +1,13 @@
+use std::path::PathBuf;
+
 use ratatui::widgets::ListItem;
 
 use crate::utils::selecthandler::SelectHandlerItem;
 
 #[derive(Clone)]
 pub enum SongType {
-    Local { path: String },
-    OnlineDownloaded { url: String, path: String },
+    Local { path: PathBuf },
+    OnlineDownloaded { url: String, path: PathBuf },
     Online { url: String },
     OnlineWithoutUrl,
 }

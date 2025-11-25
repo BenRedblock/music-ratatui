@@ -1,5 +1,5 @@
 use crate::{
-    display_handlers::folder_handler::{Folder, FolderHandler},
+    display_handlers::folder_handler::{Folder, FolderHandler, Node},
     events::{
         ApplicationEvent,
         keyboard::{Action, KeyboardHandler},
@@ -12,10 +12,11 @@ use crate::{
     song::Song,
     utils::selecthandler::SelectHandler,
 };
+use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashMap,
     env,
-    path::Path,
+    path::{Path, PathBuf},
     sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::Duration,
@@ -33,6 +34,9 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
+
+    info!("booting up");
     let args: Vec<String> = env::args().collect();
     let path = if args.len() > 1 {
         args[1].clone()
@@ -44,19 +48,22 @@ async fn main() -> Result<(), std::io::Error> {
     res
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum CurrentScreen {
     Main(FocusedWindowMain),
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum FocusedWindowMain {
-    Media(MediaDisplayType),
+    Media,
     Queue,
     Search,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum MediaDisplayType {
     Songs,
-    Folder,
+    Folders,
 }
 
 struct App {
@@ -69,6 +76,7 @@ struct App {
     file_finder: FileFinder,
     pub player_information: PlayerInformation,
     current_screen: CurrentScreen,
+    selected_media_display_type: MediaDisplayType,
     search_handler: SearchHandler,
     player_tx: Sender<PlayerReceiveEvent>,
     event_rx: Receiver<ApplicationEvent>,
@@ -87,8 +95,9 @@ impl App {
         );
 
         file_finder.find_paths(None, None);
-        let folder_handler = FolderHandler::new(file_finder.folder.clone());
-
+        let mut folder_handler =
+            FolderHandler::new(Folder::new("root".to_string(), PathBuf::from("root")));
+        folder_handler.insert_songs(file_finder.songs.to_owned());
         App {
             exit: false,
             songs: HashMap::new(),
@@ -98,7 +107,8 @@ impl App {
             queue_select_handler: SelectHandler::new(),
             file_finder: file_finder,
             player_information: PlayerInformation::default(),
-            current_screen: CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Folder)),
+            current_screen: CurrentScreen::Main(FocusedWindowMain::Media),
+            selected_media_display_type: MediaDisplayType::Songs,
             search_handler: SearchHandler::new(),
             player_tx,
             event_rx,
@@ -107,9 +117,9 @@ impl App {
 
     async fn run(&mut self) -> Result<(), std::io::Error> {
         let mut terminal = ratatui::init();
-
-        self.file_finder.create_songs().iter().map(|songs| {
-            songs.iter().for_each(|song| {
+        {
+            let songs_vec = self.file_finder.create_songs();
+            for song in songs_vec {
                 self.songs.insert(
                     format!(
                         "{}-{}",
@@ -118,8 +128,10 @@ impl App {
                     ),
                     song.clone(),
                 );
-            })
-        });
+            }
+        }
+        self.select_handler
+            .set_items(self.songs.values().cloned().collect());
         let _ = terminal.draw(|frame| {
             ui::render(frame, self);
         });
@@ -179,7 +191,7 @@ impl App {
                     },
                 }
             }
-            thread::sleep(Duration::from_millis(20));
+            thread::sleep(Duration::from_millis(5));
         }
         ratatui::restore();
         Ok(())
@@ -192,23 +204,23 @@ impl App {
         match action {
             Action::SwitchWindow => {
                 self.current_screen = CurrentScreen::Main(match focused_window {
-                    FocusedWindowMain::Media(_) => FocusedWindowMain::Queue,
-                    FocusedWindowMain::Queue => FocusedWindowMain::Media(MediaDisplayType::Folder),
-                    _ => FocusedWindowMain::Media(MediaDisplayType::Folder),
+                    FocusedWindowMain::Media => FocusedWindowMain::Queue,
+                    FocusedWindowMain::Queue => FocusedWindowMain::Media,
+                    _ => FocusedWindowMain::Media,
                 })
             }
             Action::MoveUp => match focused_window {
                 FocusedWindowMain::Queue => self.queue_select_handler.up(),
-                FocusedWindowMain::Media(display_type) => match display_type {
-                    MediaDisplayType::Folder => self.select_handler.up(),
+                FocusedWindowMain::Media => match self.selected_media_display_type {
+                    MediaDisplayType::Folders => self.folder_handler.select_handler_up(),
                     MediaDisplayType::Songs => self.select_handler.up(),
                 },
                 _ => {}
             },
             Action::MoveDown => match focused_window {
                 FocusedWindowMain::Queue => self.queue_select_handler.down(),
-                FocusedWindowMain::Media(display_type) => match display_type {
-                    MediaDisplayType::Folder => self.select_handler.down(),
+                FocusedWindowMain::Media => match self.selected_media_display_type {
+                    MediaDisplayType::Folders => self.folder_handler.select_handler_down(),
                     MediaDisplayType::Songs => self.select_handler.down(),
                 },
                 _ => {}
@@ -221,7 +233,7 @@ impl App {
                             .expect("Failed to set song");
                     }
                 }
-                FocusedWindowMain::Media(display_type) => match display_type {
+                FocusedWindowMain::Media => match self.selected_media_display_type {
                     MediaDisplayType::Songs => {
                         if let Some(index) = self.select_handler.state().selected() {
                             let (queue1, queue2) = self.select_handler.items().split_at(index);
@@ -232,34 +244,82 @@ impl App {
                                 .expect("Failed to send song to player");
                         }
                     }
-                    MediaDisplayType::Folder => {}
+                    MediaDisplayType::Folders => {
+                        let song = self.folder_handler.select_handler_select();
+                        if let Some(song) = song {
+                            self.player_tx
+                                .send(PlayerReceiveEvent::CreateQueueAndPlay(vec![song]))
+                                .expect("Failed to send song to player");
+                        }
+                    }
                 },
                 FocusedWindowMain::Search => {
                     let _ = self.search_handler.search();
-                    self.current_screen =
-                        CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Folder));
+                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Media);
                 }
             },
-            Action::Char(char) => match focused_window {
-                FocusedWindowMain::Search => {
-                    self.search_handler.add_char_to_query(char);
+            Action::Char(char) => {
+                match focused_window {
+                    FocusedWindowMain::Search => {
+                        self.search_handler.add_char_to_query(char);
+                    }
+                    FocusedWindowMain::Media => match self.selected_media_display_type {
+                        MediaDisplayType::Folders => {
+                            if char == 'a' {
+                                if let Some(song) = self.folder_handler.select_handler_selected() {
+                                    match song {
+                                        Node::Folder(folder) => {
+                                            let queue: Vec<Song> = folder
+                                                .get_children()
+                                                .iter()
+                                                .filter_map(|child| match child {
+                                                    Node::Song(song) => Some(song.to_owned()),
+                                                    _ => None,
+                                                })
+                                                .collect();
+                                            info!("Queue created!");
+                                            self.player_tx
+                                                .send(PlayerReceiveEvent::AddSongsToQueueAndPlay(
+                                                    queue,
+                                                ))
+                                                .expect("Failed to send songs to player");
+                                            info!("Playing queue!");
+                                        }
+                                        Node::Song(song) => self
+                                            .player_tx
+                                            .send(PlayerReceiveEvent::AddSongsToQueueAndPlay(vec![
+                                                song.to_owned(),
+                                            ]))
+                                            .expect("Failed to send song to player"),
+                                    };
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
-                _ => {
+                if !matches!(focused_window, FocusedWindowMain::Search) {
                     if char == 'f' {
                         self.current_screen = CurrentScreen::Main(FocusedWindowMain::Search);
                     }
                 }
-            },
+            }
             Action::Backspace => match focused_window {
                 FocusedWindowMain::Search => {
                     self.search_handler.remove_last_char();
                 }
+                FocusedWindowMain::Media => match self.selected_media_display_type {
+                    MediaDisplayType::Folders => {
+                        self.folder_handler.go_to_parent();
+                    }
+                    _ => {}
+                },
                 _ => {}
             },
             Action::Esc => match focused_window {
                 FocusedWindowMain::Search => {
-                    self.current_screen =
-                        CurrentScreen::Main(FocusedWindowMain::Media(MediaDisplayType::Songs));
+                    self.current_screen = CurrentScreen::Main(FocusedWindowMain::Media);
                 }
                 _ => {}
             },

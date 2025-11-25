@@ -1,6 +1,7 @@
 use std::{fs::read_dir, path::PathBuf, str::FromStr};
 
 use id3::{Tag, TagLike};
+use log::info;
 use vlc::{Instance, Media};
 
 use crate::{
@@ -13,25 +14,18 @@ pub struct FileFinder {
     search_path: PathBuf,
     depth: u32,
     found_paths: Vec<PathBuf>,
-    songs: Vec<Song>,
-    pub folder: Folder,
+    pub songs: Vec<Song>,
 }
 
 impl FileFinder {
     pub fn new(extensions: [String; 3], search_path: String, depth: Option<u32>) -> Self {
         let search_path = PathBuf::from(search_path);
-        let root_name = search_path
-            .file_name()
-            .expect("search_path should be valid")
-            .to_string_lossy()
-            .to_string();
         FileFinder {
             extensions,
             found_paths: Vec::new(),
             search_path: search_path.clone(),
             depth: depth.unwrap_or(3),
             songs: Vec::new(),
-            folder: Folder::new(root_name, search_path),
         }
     }
 
@@ -62,12 +56,6 @@ impl FileFinder {
                                     let song =
                                         FileFinder::create_song(&vlc_instance, &entry.path());
                                     if let Some(song) = song {
-                                        self.folder.add_child_at_path(
-                                            crate::display_handlers::folder_handler::Node::Song(
-                                                song.clone(),
-                                            ),
-                                            entry.path().clone(),
-                                        );
                                         self.songs.push(song);
                                     }
                                     self.found_paths.push(entry.path());
@@ -77,11 +65,6 @@ impl FileFinder {
                             let path = entry.path();
                             let file_name = entry.file_name().to_string_lossy().to_string();
                             if depth > 0 && !file_name.starts_with(".") {
-                                let folder = Folder::new(file_name, path.clone());
-                                self.folder.add_child_at_path(
-                                    crate::display_handlers::folder_handler::Node::Folder(folder),
-                                    path.clone(),
-                                );
                                 self.find_paths(Some(&path), Some(depth - 1));
                             }
                         }
@@ -100,33 +83,34 @@ impl FileFinder {
                 total_time: media.duration().unwrap_or(5) as u32,
                 album: tag.album().map(|s| s.to_string()),
                 song_type: SongType::Local {
-                    path: path.to_string_lossy().to_string(),
+                    path: path.to_owned(),
                 },
             };
             return Some(song);
         }
         return None;
     }
-    pub fn create_songs(&mut self) -> Result<&Vec<Song>, id3::Error> {
+    pub fn create_songs(&mut self) -> &Vec<Song> {
         let mut vector = Vec::new();
         let vlc_instance = Instance::new().unwrap();
         for path in &self.found_paths {
             if let Ok(tag) = Tag::read_from_path(path) {
-                let media = Media::new_path(&vlc_instance, path).unwrap();
-                media.parse();
-                let song = Song {
-                    artist: tag.artist().map(|s| s.to_string()),
-                    title: tag.title().unwrap_or("Not defiended").to_string(),
-                    total_time: media.duration().unwrap_or(5) as u32,
-                    album: tag.album().map(|s| s.to_string()),
-                    song_type: SongType::Local {
-                        path: path.to_string_lossy().to_string(),
-                    },
+                if let Some(media) = Media::new_path(&vlc_instance, path) {
+                    media.parse();
+                    let song = Song {
+                        artist: tag.artist().map(|s| s.to_string()),
+                        title: tag.title().unwrap_or("Not defiended").to_string(),
+                        total_time: media.duration().unwrap_or(5) as u32,
+                        album: tag.album().map(|s| s.to_string()),
+                        song_type: SongType::Local {
+                            path: path.to_owned(),
+                        },
+                    };
+                    vector.push(song);
                 };
-                vector.push(song);
             }
         }
         self.songs = vector;
-        Ok(&self.songs)
+        &self.songs
     }
 }
