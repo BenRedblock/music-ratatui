@@ -17,6 +17,7 @@ use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
+    process,
     sync::mpsc::{Receiver, Sender, channel},
     thread,
     time::Duration,
@@ -45,7 +46,11 @@ async fn main() -> Result<(), std::io::Error> {
     };
     let mut app = App::new(path);
     let res = app.run().await;
-    res
+    if res.is_err() {
+        error!("Error: {}", res.err().unwrap());
+        process::exit(1);
+    }
+    process::exit(0);
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
