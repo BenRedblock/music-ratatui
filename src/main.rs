@@ -268,40 +268,51 @@ impl App {
                     FocusedWindowMain::Search => {
                         self.search_handler.add_char_to_query(char);
                     }
-                    FocusedWindowMain::Media => match self.selected_media_display_type {
-                        MediaDisplayType::Folders => {
-                            if char == 'a' {
-                                if let Some(song) = self.folder_handler.select_handler_selected() {
-                                    match song {
-                                        Node::Folder(folder) => {
-                                            let queue: Vec<Song> = folder
-                                                .get_children()
-                                                .iter()
-                                                .filter_map(|child| match child {
-                                                    Node::Song(song) => Some(song.to_owned()),
-                                                    _ => None,
-                                                })
-                                                .collect();
-                                            info!("Queue created!");
-                                            self.player_tx
+                    FocusedWindowMain::Media => {
+                        match char {
+                            '1' => self.selected_media_display_type = MediaDisplayType::Songs,
+                            '2' => self.selected_media_display_type = MediaDisplayType::Folders,
+                            _ => {}
+                        }
+                        match self.selected_media_display_type {
+                            MediaDisplayType::Folders => {
+                                if char == 'a' {
+                                    if let Some(song) =
+                                        self.folder_handler.select_handler_selected()
+                                    {
+                                        match song {
+                                            Node::Folder(folder) => {
+                                                let queue: Vec<Song> = folder
+                                                    .get_children()
+                                                    .iter()
+                                                    .filter_map(|child| match child {
+                                                        Node::Song(song) => Some(song.to_owned()),
+                                                        _ => None,
+                                                    })
+                                                    .collect();
+                                                info!("Queue created!");
+                                                self.player_tx
+                                                    .send(
+                                                        PlayerReceiveEvent::AddSongsToQueueAndPlay(
+                                                            queue,
+                                                        ),
+                                                    )
+                                                    .expect("Failed to send songs to player");
+                                                info!("Playing queue!");
+                                            }
+                                            Node::Song(song) => self
+                                                .player_tx
                                                 .send(PlayerReceiveEvent::AddSongsToQueueAndPlay(
-                                                    queue,
+                                                    vec![song.to_owned()],
                                                 ))
-                                                .expect("Failed to send songs to player");
-                                            info!("Playing queue!");
-                                        }
-                                        Node::Song(song) => self
-                                            .player_tx
-                                            .send(PlayerReceiveEvent::AddSongsToQueueAndPlay(vec![
-                                                song.to_owned(),
-                                            ]))
-                                            .expect("Failed to send song to player"),
-                                    };
+                                                .expect("Failed to send song to player"),
+                                        };
+                                    }
                                 }
                             }
-                        }
-                        _ => {}
-                    },
+                            _ => {}
+                        };
+                    }
                     _ => {}
                 }
                 if !matches!(focused_window, FocusedWindowMain::Search) {
