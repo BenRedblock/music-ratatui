@@ -1,5 +1,6 @@
 use std::fmt::format;
 
+use log::info;
 use musicbrainz_rs::{
     entity::{
         artist::{Artist, ArtistSearchQuery},
@@ -71,6 +72,7 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, Box<dyn std::erro
         .entities
         .iter()
         .map(|recording| {
+            info!("Recording: {:?}", recording.title);
             let artist = recording
                 .artist_credit
                 .as_ref()
@@ -108,6 +110,7 @@ pub async fn fetch_recording(query: &str) -> Result<Vec<Song>, Box<dyn std::erro
             )
             .await;
         if let Ok(Some(SearchResult::Video(video))) = yt_search_result {
+            info!("YT search result: {:?}", video.title);
             song.song_type = SongType::Online { url: video.url }
         }
     }
